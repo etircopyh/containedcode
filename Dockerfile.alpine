@@ -75,7 +75,8 @@ cd /workspace\n\
 \n\
 exec sudo -u opencode \\\n\
     env HOME=/home/opencode \\\n\
-        USER=opencode \\\n\
+        USER=opencode \
+        PATH="/root/.bun/bin:$PATH" \\\n\
         OPENCODE_SERVER_PASSWORD="$OPENCODE_SERVER_PASSWORD" \\\n\
         opencode serve --hostname "$HOSTNAME" --port "$PORT"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 
