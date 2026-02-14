@@ -1,0 +1,38 @@
+# Komodo Stack Configuration for OpenCode Server
+#
+# To deploy:
+# 1. Push this repo to a git repository
+# 2. In Komodo UI, create a new Stack resource
+# 3. Configure git provider, repo, and branch
+# 4. Set the required secrets (OPENCODE_SERVER_PASSWORD)
+# 5. Deploy
+
+[[stack]]
+name = "opencode-server"
+description = "Secure OpenCode server container with Nix package manager"
+
+[stack.config]
+# Target server ID (set in Komodo UI)
+server_id = "default"
+
+# Git configuration (configure in Komodo UI)
+# git_provider = "github.com"
+# git_account = "your-username"
+# repo = "your-username/containedcode"
+# branch = "main"
+
+# Compose file paths
+file_paths = ["docker-compose.yml"]
+
+# Environment variables (set in Komodo UI or use secrets)
+# The password should be set as a secret in Komodo
+[stack.config.environment]
+PORT = "8888"
+HOSTNAME = "0.0.0.0"
+# OPENCODE_SERVER_PASSWORD = "[[OPENCODE_SERVER_PASSWORD]]"  # Use Komodo secret interpolation
+
+# Auto-pull images before deploy
+auto_pull = true
+
+# Don't skip secret interpolation
+skip_secret_interp = false

@@ -1,0 +1,24 @@
+# Build artifacts
+result
+result-*
+
+# Nix
+.direnv/
+
+# Workspace (user content)
+workspace/
+
+# Project mounts config
+.projects
+
+# Docker compose override (generated)
+docker-compose.override.yml
+
+# OS files
+.DS_Store
+*.swp
+*~
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,91 @@
+# Dockerfile for building OpenCode server without Nix
+# This is a fallback for systems without Nix installed
+#
+# Build: docker build -f Dockerfile.nix -t opencode-server .
+
+FROM alpine:3.21
+
+# Install essential packages
+RUN apk add --no-cache \
+    bash \
+    coreutils \
+    sudo \
+    shadow \
+    curl \
+    wget \
+    git \
+    make \
+    cmake \
+    gcc \
+    g++ \
+    pkgconfig \
+    nodejs \
+    npm \
+    python3 \
+    py3-pip \
+    go \
+    rust \
+    cargo \
+    postgresql-client \
+    redis \
+    sqlite \
+    jq \
+    yq \
+    nano \
+    vim \
+    htop \
+    procps \
+    grep \
+    sed \
+    gawk \
+    findutils \
+    ca-certificates \
+    && rm -rf /var/cache/apk/*
+
+# Install bun
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:$PATH"
+
+# Install uv (Python package manager)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+
+# Install OpenCode via npm (more reliable)
+RUN npm install -g opencode-ai
+ENV PATH="/root/.opencode/bin:$PATH"
+
+# Create non-root user
+RUN adduser -D -u 1000 -h /home/opencode opencode
+
+# Create necessary directories
+RUN mkdir -p /workspace \
+    /home/opencode/.config/opencode \
+    /home/opencode/.local/state \
+    /home/opencode/.cache \
+    && chown -R opencode:opencode /home/opencode /workspace
+
+# Create entrypoint script
+RUN printf '#!/bin/bash\n\
+set -e\n\
+\n\
+PORT="${PORT:-8888}"\n\
+HOSTNAME="${HOSTNAME:-0.0.0.0}"\n\
+\n\
+cd /workspace\n\
+\n\
+exec sudo -u opencode \\\n\
+    env HOME=/home/opencode \\\n\
+        USER=opencode \\\n\
+        OPENCODE_SERVER_PASSWORD="$OPENCODE_SERVER_PASSWORD" \\\n\
+        opencode serve --hostname "$HOSTNAME" --port "$PORT"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# Create shell entrypoint for debugging
+RUN printf '#!/bin/bash\n\
+cd /workspace\n\
+exec sudo -u opencode env HOME=/home/opencode USER=opencode bash\n' > /shell-entrypoint.sh && chmod +x /shell-entrypoint.sh
+
+WORKDIR /workspace
+
+EXPOSE 8888
+
+ENTRYPOINT ["/entrypoint.sh"]

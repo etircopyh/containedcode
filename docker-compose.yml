@@ -1,0 +1,82 @@
+# OpenCode Server - Secure Container Configuration
+# 
+# Usage:
+#   OPENCODE_SERVER_PASSWORD=your-password ./start.sh
+#   PORT=9999 OPENCODE_SERVER_PASSWORD=your-password ./start.sh
+#
+# For interactive shell (debugging):
+#   docker compose run --rm opencode-server /bin/shell-entrypoint
+
+services:
+  opencode-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.nix
+    image: opencode-server:latest
+    container_name: opencode-server
+    
+    # Port configuration (configurable via PORT env var)
+    ports:
+      - "${PORT:-8888}:${PORT:-8888}"
+    
+    # Environment configuration
+    environment:
+      - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD}
+      - PORT=${PORT:-8888}
+      - HOSTNAME=0.0.0.0
+    
+    # Volume mounts
+    volumes:
+      # Project workspace - your code goes here
+      - ./workspace:/workspace:rw
+      
+      # OpenCode config directory (contains opencode.json, oh-my-opencode.json, etc.)
+      # Read-only for security - API keys and settings protected
+      - ${OPENCODE_CONFIG_DIR:-~/.config/opencode}:/home/opencode/.config/opencode:ro
+      
+      # Persist Nix packages between runs
+      - nix-store:/nix:rw
+      
+      # Persist opencode data (sessions, cache, etc.)
+      - opencode-data:/home/opencode/.local:rw
+    
+    # Security settings
+    security_opt:
+      - no-new-privileges:true
+    read_only: false  # Required for Nix to work
+    
+    # Run as non-root user (UID 1000)
+    user: "0:0"  # Start as root for init, drops to 1000 in entrypoint
+    
+    # Resource limits (adjust as needed)
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 512M
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Named volumes for persistence
+volumes:
+  nix-store:
+    name: opencode-nix-store
+  opencode-data:
+    name: opencode-data
