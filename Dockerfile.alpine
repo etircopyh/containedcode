@@ -42,20 +42,23 @@ RUN apk add --no-cache \
     ca-certificates \
     && rm -rf /var/cache/apk/*
 
-# Install bun
-RUN curl -fsSL https://bun.sh/install | bash
-ENV PATH="/root/.bun/bin:$PATH"
-
-# Install uv (Python package manager)
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:$PATH"
-
-# Install OpenCode via bun
-RUN bun install -g opencode-ai
-ENV PATH="/root/.bun/bin:$PATH"
-
-# Create non-root user
+# Create non-root user first
 RUN adduser -D -u 1000 -h /home/opencode opencode
+
+# Install bun as opencode user
+USER opencode
+ENV HOME=/home/opencode
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/home/opencode/.bun/bin:$PATH"
+
+# Install uv (Python package manager) as opencode user
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install OpenCode via bun as opencode user
+RUN bun install -g opencode-ai
+
+# Switch back to root for setup
+USER root
 
 # Create necessary directories
 RUN mkdir -p /workspace \
@@ -75,15 +78,15 @@ cd /workspace\n\
 \n\
 exec sudo -u opencode \\\n\
     env HOME=/home/opencode \\\n\
-        USER=opencode \
-        PATH="/root/.bun/bin:$PATH" \\\n\
+        USER=opencode \\\n\
+        PATH="/home/opencode/.bun/bin:$PATH" \\\n\
         OPENCODE_SERVER_PASSWORD="$OPENCODE_SERVER_PASSWORD" \\\n\
         opencode serve --hostname "$HOSTNAME" --port "$PORT"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Create shell entrypoint for debugging
 RUN printf '#!/bin/bash\n\
 cd /workspace\n\
-exec sudo -u opencode env HOME=/home/opencode USER=opencode bash\n' > /shell-entrypoint.sh && chmod +x /shell-entrypoint.sh
+exec sudo -u opencode env HOME=/home/opencode USER=opencode PATH="/home/opencode/.bun/bin:$PATH" bash\n' > /shell-entrypoint.sh && chmod +x /shell-entrypoint.sh
 
 WORKDIR /workspace
 
