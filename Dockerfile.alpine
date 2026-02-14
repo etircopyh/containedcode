@@ -1,7 +1,7 @@
 # Dockerfile for building OpenCode server without Nix
 # This is a fallback for systems without Nix installed
 #
-# Build: docker build -f Dockerfile.nix -t opencode-server .
+# Build: docker build -f Dockerfile.alpine -t opencode-server .
 
 FROM alpine:3.21
 
@@ -50,9 +50,9 @@ ENV PATH="/root/.bun/bin:$PATH"
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
-# Install OpenCode via npm (more reliable)
-RUN npm install -g opencode-ai
-ENV PATH="/root/.opencode/bin:$PATH"
+# Install OpenCode via bun
+RUN bun install -g opencode-ai
+ENV PATH="/root/.bun/bin:$PATH"
 
 # Create non-root user
 RUN adduser -D -u 1000 -h /home/opencode opencode

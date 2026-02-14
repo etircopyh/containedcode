@@ -36,7 +36,6 @@
           gnumake
           cmake
           gcc
-          gnumake
           pkg-config
 
           # Version control

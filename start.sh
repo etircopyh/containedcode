@@ -16,7 +16,7 @@
 # Environment Variables:
 #   OPENCODE_SERVER_PASSWORD  (required) Password for server authentication
 #   PORT                       (optional) Server port (default: 8888)
-#   OPENCODE_CONFIG_PATH       (optional) Path to opencode.json (default: ~/.config/opencode/opencode.json)
+#   OPENCODE_CONFIG_DIR        (optional) Path to config directory (default: ~/.config/opencode)
 
 set -e
 

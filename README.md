@@ -339,7 +339,7 @@ docker load < result
 
 ### Without Nix
 
-A `Dockerfile.nix` is included for systems without Nix:
+A `Dockerfile.alpine` is included for systems without Nix:
 
 ```bash
 docker compose build
