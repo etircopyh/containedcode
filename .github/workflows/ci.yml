@@ -88,4 +88,4 @@ jobs:
       - name: Test image
         run: |
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest sh -c "opencode --version"
+          docker run --rm --entrypoint "/bin/bash" ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest -c "opencode --version"

@@ -57,6 +57,9 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 # Install OpenCode via bun as opencode user
 RUN bun install -g opencode-ai
 
+# Install language servers globally for LSP support
+RUN bun install -g typescript-language-server typescript vscode-langservers-extracted pyright yaml-language-server bash-language-server dockerfile-language-server-nodejs @biomejs/biome
+
 # Switch back to root for setup
 USER root
 

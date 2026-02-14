@@ -376,7 +376,61 @@ nix profile add nixpkgs#zig
 nix profile add nixpkgs#ripgrep
 nix profile add nixpkgs#fd
 nix profile add nixpkgs#bat
+
+# Additional LSP servers (if needed)
+nix profile add nixpkgs#yaml-language-server
+nix profile add nixpkgs#bash-language-server
+nix profile add nixpkgs#dockerfile-language-server-nodejs
 ```
+
+---
+
+## Language Server Protocol (LSP) Support
+
+OpenCode uses LSP servers for intelligent code features (diagnostics, go-to-definition, etc.). The following LSP servers are pre-installed:
+
+| Language | Server | Command |
+|----------|--------|---------|
+| TypeScript/JavaScript | typescript-language-server | `typescript-language-server` |
+| TypeScript/JavaScript/JSON | biome | `biome` |
+| HTML/CSS/JSON/ESLint | vscode-langservers-extracted | `vscode-html-language-server`, `vscode-css-language-server`, `vscode-json-language-server`, `vscode-eslint-language-server` |
+| YAML | yaml-language-server | `yaml-language-server` |
+| Bash | bash-language-server | `bash-language-server` |
+| Dockerfile | dockerfile-language-server-nodejs | `dockerfile-language-server-nodejs` |
+| Python | pyright | `pyright` |
+| Go | gopls | `gopls` |
+| Rust | rust-analyzer | `rust-analyzer` |
+| Lua | lua-language-server | `lua-language-server` |
+| Nix | nixd | `nixd` |
+
+### Installing Additional LSP Servers
+
+**Inside the container**, you can install more LSP servers:
+
+```bash
+# Using Nix (recommended)
+nix profile add nixpkgs#ansible-language-server
+nix profile add nixpkgs#terraform-ls
+nix profile add nixpkgs#clang-tools  # C/C++ language server
+nix profile add nixpkgs#texlab       # LaTeX language server
+nix profile add nixpkgs#marksman     # Markdown language server
+
+# Using npm (for Node.js-based servers)
+npm install -g @ansible/ansible-language-server
+npm install -g @prisma/language-server
+```
+
+### Can OpenCode Install Packages Automatically?
+
+**Not automatically**, but you can ask it to. OpenCode can run installation commands for you:
+
+```
+You: Install the YAML language server
+AI: I'll install it for you using Nix...
+     [runs nix profile add nixpkgs#yaml-language-server]
+```
+
+The container comes with **Nix** and **npm** available, so OpenCode can install packages when you ask it to. This is the "autonomy" feature — the AI has package managers available and can use them.
 
 ---
 
@@ -391,6 +445,7 @@ nix profile add nixpkgs#bat
 | **Network** | curl, wget, jq, yq |
 | **Editors** | nano, vim |
 | **System** | htop, procps, coreutils |
+| **LSP Servers** | typescript-language-server, vscode-langservers-extracted (HTML/CSS/JSON/ESLint), pyright, gopls, rust-analyzer, lua-language-server, nixd, yaml-language-server, bash-language-server, dockerfile-language-server-nodejs, biome |
 
 ---
 

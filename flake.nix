@@ -73,6 +73,20 @@
           # OpenCode itself
           opencode
 
+          # Language servers for LSP support
+          typescript-language-server
+          typescript
+          vscode-langservers-extracted  # HTML, CSS, JSON, ESLint language servers
+          nixd  # Nix language server
+          lua-language-server
+          gopls  # Go language server
+          pyright  # Python language server
+          rust-analyzer
+          yaml-language-server
+          bash-language-server
+          dockerfile-language-server-nodejs
+          biome  # Fast linter/formatter for JS/TS/JSON with LSP support
+
           # Nix configuration
           (writeTextDir "etc/nix/nix.conf" ''
             experimental-features = nix-command flakes
