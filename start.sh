@@ -17,6 +17,7 @@
 #   OPENCODE_SERVER_PASSWORD  (required) Password for server authentication
 #   PORT                       (optional) Server port (default: 8888)
 #   OPENCODE_CONFIG_DIR        (optional) Path to config directory (default: ~/.config/opencode)
+#   OPENCODE_AUTO_UPDATE       (optional) Auto-update opencode on start (default: true)
 
 set -e
 
@@ -71,7 +72,23 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --help|-h)
-            head -30 "$0" | tail -28
+            echo "OpenCode Server - Secure Container Launcher"
+            echo ""
+            echo "Usage: OPENCODE_SERVER_PASSWORD=secret ./start.sh [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --build       Force rebuild the image"
+            echo "  --detach, -d  Run in background"
+            echo "  --logs        Show logs after starting (implies --detach)"
+            echo "  --shell       Open interactive shell instead of server"
+            echo "  --stop        Stop the running container"
+            echo "  --help        Show this help message"
+            echo ""
+            echo "Environment Variables:"
+            echo "  OPENCODE_SERVER_PASSWORD  (required) Password for server authentication"
+            echo "  PORT                       (optional) Server port (default: 8888)"
+            echo "  OPENCODE_CONFIG_DIR        (optional) Path to config directory"
+            echo "  OPENCODE_AUTO_UPDATE       (optional) Auto-update on start (default: true)"
             exit 0
             ;;
         *)
@@ -124,6 +141,7 @@ mkdir -p ./workspace
 export OPENCODE_SERVER_PASSWORD
 export PORT
 export OPENCODE_CONFIG_DIR="$CONFIG_DIR"
+export OPENCODE_AUTO_UPDATE="${OPENCODE_AUTO_UPDATE:-true}"
 
 # Build or pull image
 if $BUILD || [[ ! $(docker images -q opencode-server:latest 2>/dev/null) ]]; then

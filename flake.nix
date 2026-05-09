@@ -55,7 +55,7 @@
 
         # Determine port (default 8888)
         PORT="${"\${PORT:-8888}"}"
-        HOSTNAME="${"\${HOSTNAME:-127.0.0.1}"}"
+        HOSTNAME="${"\${HOSTNAME:-0.0.0.0}"}"
 
         # Change to workspace
         cd /workspace
@@ -129,7 +129,7 @@
           nodejs_22
           uv            # Python package manager
           python
-          go_1_24
+          go
           rustc
           cargo
 
@@ -175,20 +175,24 @@
             substituters = https://cache.nixos.org/
             trusted-users = root opencode
             sandbox = false
-            build-users-group =
+            build-users-group = nixbld
             ssl-cert-file = ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
-            require-sigs = false
           '')
 
-          # User configuration
-          (writeTextDir "etc/passwd" ''
+          # User configuration - nixbld1..nixbld30 users for multi-user Nix builds
+          (let
+            nixbldUsers = pkgs.lib.concatMapStringsSep "\n"
+              (i: "nixbld${toString i}:x:${toString (30000 + i)}:30000::/var/empty:/bin/false")
+              (pkgs.lib.range 1 30);
+          in writeTextDir "etc/passwd" ''
             root:x:0:0::/root:/bin/bash
             opencode:x:1000:1000::/home/opencode:/bin/bash
+            ${nixbldUsers}
           '')
           (writeTextDir "etc/group" ''
             root:x:0:
             opencode:x:1000:
-            nixbld:x:30000:1000
+            nixbld:x:30000:opencode
           '')
           (writeTextDir "root/.bashrc" "")
 
@@ -208,10 +212,9 @@
           WorkingDir = "/workspace";
           Entrypoint = [ "/bin/entrypoint" ];
           Env = [
-            "HOME=/tmp"
+            "HOME=/home/opencode"
             "USER=opencode"
             "PATH=/bin:/usr/bin:/home/opencode/.nix-profile/bin:/nix/var/nix/profiles/default/bin"
-            "TMPDIR=/home/opencode/.cache"
             "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
             "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
             "NIX_REMOTE_TRUSTED_PUBLIC_KEYS=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="

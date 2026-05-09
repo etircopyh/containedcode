@@ -57,7 +57,7 @@
 | **Complete Isolation** | No access to host `$HOME`, only mounted workspace |
 | **Password Protected** | Server requires authentication via `OPENCODE_SERVER_PASSWORD` |
 | **Pre-installed Tools** | git, node, python, go, rust, postgresql, redis, mongodb, and more |
-| **Unlimited Autonomy** | Nix package manager with 60,000+ packages for on-demand installation |
+| **Unlimited Autonomy** | Nix package manager with 80,000+ packages for on-demand installation |
 | **Non-root User** | Runs as UID 1000 for security best practices |
 | **Configurable Port** | Change via `PORT` environment variable |
 | **Read-only Config** | Your `opencode.json` with API keys is mounted read-only |
@@ -307,6 +307,7 @@ OPENCODE_CONFIG_DIR=/path/to/opencode-config OPENCODE_SERVER_PASSWORD=secret ./s
 | `OPENCODE_SERVER_PASSWORD` | ✅ Yes | — | Password for server authentication |
 | `PORT` | ❌ No | `8888` | Server port |
 | `OPENCODE_CONFIG_DIR` | ❌ No | `~/.config/opencode` | Path to config directory |
+| `OPENCODE_AUTO_UPDATE` | ❌ No | `true` | Auto-update opencode on container start |
 
 ---
 
@@ -438,7 +439,7 @@ The container comes with **Nix** and **npm** available, so OpenCode can install 
 
 | Category | Tools |
 |----------|-------|
-| **Languages** | Node.js 22, Python 3.12, Go 1.23, Rust, Bun |
+| **Languages** | Node.js 22, Python 3.12, Go 1.26, Rust, Bun |
 | **Databases** | PostgreSQL client, Redis CLI, MongoDB tools, SQLite |
 | **Build** | Make, CMake, GCC, pkg-config |
 | **Version Control** | Git, GitHub CLI |

@@ -35,10 +35,15 @@ services:
       - ${OPENCODE_CONFIG_DIR:-~/.config/opencode}:/home/opencode/.config/opencode:ro
       
       # Persist Nix packages between runs
+      # NOTE: Named volumes hide image content on first mount. The entrypoint
+      # copies build-time content into the volume if it's empty (see entrypoint init logic).
       - nix-store:/nix:rw
       
-      # Persist opencode data (sessions, cache, etc.)
+      # Persist opencode data (sessions, bun global packages, uv tools, etc.)
       - opencode-data:/home/opencode/.local:rw
+      
+      # Persist package caches between runs
+      - opencode-cache:/home/opencode/.cache:rw
     
     # Security settings
     security_opt:
@@ -77,3 +82,5 @@ volumes:
     name: opencode-nix-store
   opencode-data:
     name: opencode-data
+  opencode-cache:
+    name: opencode-cache

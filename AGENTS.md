@@ -8,6 +8,9 @@ This document describes the tools available in the OpenCode server container.
 
 The Nix package manager is installed and allows you to install **any of 80,000+ packages** from the Nixpkgs repository.
 
+> **Important:** Always use `nix profile install` (not `nix-env -iA`).
+> The two profile systems are incompatible and mixing them causes conflicts.
+
 **Basic commands:**
 ```bash
 # Search for packages
@@ -120,7 +123,7 @@ Language servers provide IDE features (autocomplete, go-to-definition, diagnosti
 - Node.js 22 + npm
 - Bun (canary)
 - Python 3.12 + uv
-- Go 1.23
+- Go 1.26
 - Rust + Cargo
 
 ### Database Clients
@@ -184,9 +187,14 @@ Packages installed via Nix and Bun are persisted between container restarts via 
 - `/home/opencode/.local` - Bun global packages and uv tools
 - `/home/opencode/.cache` - Package caches
 
+> **Note:** Named Docker volumes are empty on first mount. The container entrypoint
+> automatically copies build-time content into fresh volumes. Subsequent restarts
+> preserve your installed packages.
+
 ## Notes
 
 - Nix flakes are enabled (`experimental-features = nix-command flakes`)
 - The user `opencode` is trusted for Nix operations
 - Sandbox is disabled for compatibility
 - 30 nix build users are configured for multi-user mode
+- Auto-update on container start can be disabled with `OPENCODE_AUTO_UPDATE=false`

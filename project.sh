@@ -28,20 +28,27 @@ case "$cmd" in
     list|ls)
         echo "Projects in workspace:"
         echo ""
+        found=false
         for d in "$WORKSPACE_DIR"/*/; do
             if [[ -d "$d" ]]; then
                 name=$(basename "$d")
                 echo "  $name"
+                found=true
             fi
         done
+        if ! $found; then
+            echo "  (none)"
+        fi
         if [[ -f "$PROJECTS_FILE" ]]; then
             echo ""
             echo "External mounts (requires server restart):"
-            cat "$PROJECTS_FILE" | while read line; do
+            while IFS= read -r line; do
+                # Skip empty lines
+                [[ -z "$line" ]] && continue
                 name="${line%%:*}"
                 path="${line#*:}"
                 echo "  $name -> $path"
-            done
+            done < "$PROJECTS_FILE"
         fi
         ;;
     
@@ -101,8 +108,11 @@ case "$cmd" in
         fi
         
         if [[ -f "$PROJECTS_FILE" ]]; then
-            grep -v "^$arg:" "$PROJECTS_FILE" > "$PROJECTS_FILE.tmp" 2>/dev/null || true
+            # Use fixed-string matching to avoid regex injection from project names
+            grep -vF "$arg:" "$PROJECTS_FILE" > "$PROJECTS_FILE.tmp" 2>/dev/null || true
             mv "$PROJECTS_FILE.tmp" "$PROJECTS_FILE"
+            # Remove empty lines that may accumulate
+            sed -i '/^$/d' "$PROJECTS_FILE"
             echo "Removed mount: $arg"
             echo "Run ./project.sh apply to update docker-compose.yml"
         fi
@@ -114,6 +124,25 @@ case "$cmd" in
             exit 0
         fi
         
+        # Check if there are any non-empty lines
+        if ! grep -q '.' "$PROJECTS_FILE"; then
+            echo "No external mounts configured (empty .projects file)"
+            exit 0
+        fi
+        
+        # Warn if override file already exists with manual edits
+        if [[ -f docker-compose.override.yml ]]; then
+            echo "WARNING: docker-compose.override.yml already exists and will be overwritten."
+            echo "Current content:"
+            cat docker-compose.override.yml
+            echo ""
+            read -r -p "Continue? [y/N] " response
+            if [[ "$response" != "y" && "$response" != "Y" ]]; then
+                echo "Aborted."
+                exit 0
+            fi
+        fi
+        
         echo "Generating docker-compose.override.yml ..."
         
         cat > docker-compose.override.yml << 'HEADER'
@@ -122,11 +151,13 @@ services:
     volumes:
 HEADER
         
-        cat "$PROJECTS_FILE" | while read line; do
+        while IFS= read -r line; do
+            # Skip empty lines
+            [[ -z "$line" ]] && continue
             name="${line%%:*}"
             path="${line#*:}"
             echo "      - $path:/workspace/$name:rw" >> docker-compose.override.yml
-        done
+        done < "$PROJECTS_FILE"
         
         echo "Created docker-compose.override.yml"
         echo ""

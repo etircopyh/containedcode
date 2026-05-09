@@ -44,20 +44,19 @@ RUN apk add --no-cache \
     gcompat \
     && rm -rf /var/cache/apk/*
 
-# Install Nix package manager
+# Install Nix package manager using the official install script (avoids hardcoded version URLs)
+# Create nixbld group and users for multi-user builds
 RUN addgroup -g 30000 -S nixbld && \
     for i in $(seq 1 30); do adduser -S -D -h /var/empty -g "Nix build user $i" -u $((30000 + i)) -G nixbld nixbld$i ; done && \
     mkdir -m 0755 /etc/nix /nix && \
     echo 'sandbox = false' >> /etc/nix/nix.conf && \
     echo 'experimental-features = nix-command flakes' >> /etc/nix/nix.conf && \
     echo 'trusted-users = root opencode' >> /etc/nix/nix.conf && \
-    wget -q https://nixos.org/releases/nix/nix-2.24.9/nix-2.24.9-$(uname -m)-linux.tar.xz && \
-    tar xf nix-2.24.9-$(uname -m)-linux.tar.xz && \
-    USER=root sh nix-2.24.9-$(uname -m)-linux/install && \
-    rm -rf nix-2.24.9-* && \
+    echo 'build-users-group = nixbld' >> /etc/nix/nix.conf && \
+    sh <(curl -L https://nixos.org/nix/install) --no-daemon && \
     ln -s /nix/var/nix/profiles/default/etc/profile.d/nix.sh /etc/profile.d/nix.sh
 
-# Create non-root user first
+# Create non-root user
 RUN adduser -D -u 1000 -h /home/opencode opencode
 
 # Install bun as opencode user
@@ -99,27 +98,55 @@ RUN install -d -o opencode -g opencode /workspace \
 
 # Install ast-grep via Nix system-wide (using full path since nix.sh not sourced in build)
 ENV PATH="/nix/var/nix/profiles/default/bin:$PATH"
-RUN /nix/var/nix/profiles/default/bin/nix-env -iA nixpkgs.ast-grep && \
+RUN /nix/var/nix/profiles/default/bin/nix profile install nixpkgs#ast-grep && \
     ln -s /nix/var/nix/profiles/default/bin/ast-grep /nix/var/nix/profiles/default/bin/sg
 
-# Create entrypoint script with auto-update
+# Stage build-time content for volume initialization.
+# Named Docker volumes are empty on first mount and hide image content.
+# We copy to /opt/init-* so the entrypoint can populate fresh volumes.
+RUN mkdir -p /opt/init-nix /opt/init-local /opt/init-cache && \
+    cp -a /nix/. /opt/init-nix/ && \
+    cp -a /home/opencode/.local/. /opt/init-local/ && \
+    cp -a /home/opencode/.cache/. /opt/init-cache/ 2>/dev/null || true
+
+# Create entrypoint script with volume init and optional auto-update
 RUN printf '#!/bin/bash\n\
 set -e\n\
 \n\
-echo "Checking for opencode updates..."\n\
-ARCH=$(uname -m)\n\
-case "$ARCH" in\n\
-    x86_64) MUSL_PKG="opencode-linux-x64-musl" ;;\n\
-    aarch64) MUSL_PKG="opencode-linux-arm64-musl" ;;\n\
-    *) MUSL_PKG="" ;;\n\
-esac\n\
-bun install -g opencode-ai@latest "${MUSL_PKG}@latest" || echo "Update failed, continuing with existing version..."\n\
-# Ensure correct musl binary is linked\n\
-if [ -n "$MUSL_PKG" ]; then\n\
-    ln -sf "/home/opencode/.bun/install/global/node_modules/$MUSL_PKG/bin/opencode" \\\n\
-           "/home/opencode/.bun/install/global/node_modules/opencode-ai/bin/.opencode"\n\
+# Initialize named volumes from staged build content if they are empty.\n\
+# This handles the case where Docker creates a fresh empty volume that\n\
+# hides the image content at that mount point.\n\
+if [ -d /opt/init-nix ] && [ -z "$(ls -A /nix/store 2>/dev/null)" ]; then\n\
+    echo "Initializing /nix volume from build image..."\n\
+    cp -a /opt/init-nix/. /nix/\n\
 fi\n\
-opencode --version\n\
+if [ -d /opt/init-local ] && [ -z "$(ls -A /home/opencode/.local 2>/dev/null)" ]; then\n\
+    echo "Initializing /home/opencode/.local volume from build image..."\n\
+    cp -a /opt/init-local/. /home/opencode/.local/\n\
+    chown -R opencode:opencode /home/opencode/.local\n\
+fi\n\
+if [ -d /opt/init-cache ] && [ -z "$(ls -A /home/opencode/.cache 2>/dev/null)" ]; then\n\
+    echo "Initializing /home/opencode/.cache volume from build image..."\n\
+    cp -a /opt/init-cache/. /home/opencode/.cache/\n\
+    chown -R opencode:opencode /home/opencode/.cache\n\
+fi\n\
+\n\
+if [ "${OPENCODE_AUTO_UPDATE:-true}" = "true" ]; then\n\
+    echo "Checking for opencode updates..."\n\
+    ARCH=$(uname -m)\n\
+    case "$ARCH" in\n\
+        x86_64) MUSL_PKG="opencode-linux-x64-musl" ;;\n\
+        aarch64) MUSL_PKG="opencode-linux-arm64-musl" ;;\n\
+        *) MUSL_PKG="" ;;\n\
+    esac\n\
+    bun install -g opencode-ai@latest "${MUSL_PKG}@latest" || echo "Update failed, continuing with existing version..."\n\
+    # Ensure correct musl binary is linked\n\
+    if [ -n "$MUSL_PKG" ]; then\n\
+        ln -sf "/home/opencode/.bun/install/global/node_modules/$MUSL_PKG/bin/opencode" \\\n\
+               "/home/opencode/.bun/install/global/node_modules/opencode-ai/bin/.opencode"\n\
+    fi\n\
+    opencode --version\n\
+fi\n\
 \n\
 PORT="${PORT:-8888}"\n\
 HOSTNAME="${HOSTNAME:-0.0.0.0}"\n\
@@ -128,10 +155,10 @@ cd /workspace\n\
 \n\
 exec opencode serve --hostname "$HOSTNAME" --port "$PORT"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 
-# Create shell entrypoint for debugging
-RUN printf '#!/bin/bash\n\
+# Create shell entrypoint for debugging (at /bin/shell-entrypoint to match start.sh and project.sh)
+RUN mkdir -p /bin && printf '#!/bin/bash\n\
 cd /workspace\n\
-exec bash\n' > /shell-entrypoint.sh && chmod +x /shell-entrypoint.sh
+exec bash\n' > /bin/shell-entrypoint && chmod +x /bin/shell-entrypoint
 
 WORKDIR /workspace
 
