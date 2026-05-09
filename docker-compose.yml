@@ -45,9 +45,6 @@ services:
       - no-new-privileges:true
     read_only: false  # Required for Nix to work
     
-    # Run as non-root user (UID 1000)
-    user: "0:0"  # Start as root for init, drops to 1000 in entrypoint
-    
     # Resource limits (adjust as needed)
     deploy:
       resources:

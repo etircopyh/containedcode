@@ -20,6 +20,13 @@
 
 set -e
 
+# Load .env file if it exists
+if [[ -f ".env" ]]; then
+    set -a
+    source ".env"
+    set +a
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -121,17 +128,10 @@ export OPENCODE_CONFIG_DIR="$CONFIG_DIR"
 # Build or pull image
 if $BUILD || [[ ! $(docker images -q opencode-server:latest 2>/dev/null) ]]; then
     echo -e "${BLUE}Building container image...${NC}"
-    
-    # Check if Nix is available
-    if command -v nix &> /dev/null; then
-        echo -e "${BLUE}Using Nix to build...${NC}"
-        nix --extra-experimental-features 'nix-command flakes' build .#default
-        docker load < result
-    else
-        # Fall back to Dockerfile build
-        echo -e "${BLUE}Using Dockerfile to build...${NC}"
-        docker compose build
-    fi
+
+    # Use Dockerfile build (Nix build has issues with script paths)
+    echo -e "${BLUE}Using Dockerfile to build...${NC}"
+    docker compose build
 fi
 
 # Run container
@@ -141,7 +141,7 @@ if $SHELL_MODE; then
     docker compose run --rm opencode-server /bin/shell-entrypoint
 else
     echo -e "${BLUE}Starting OpenCode server on port $PORT...${NC}"
-    
+
     if $DETACH; then
         docker compose up -d --remove-orphans
         echo -e "${GREEN}Server started in background!${NC}"
@@ -152,7 +152,7 @@ else
         echo ""
         echo "To view logs: docker compose logs -f"
         echo "To stop: ./start.sh --stop"
-        
+
         if $SHOW_LOGS; then
             echo ""
             echo -e "${BLUE}Showing logs (Ctrl+C to exit)...${NC}"

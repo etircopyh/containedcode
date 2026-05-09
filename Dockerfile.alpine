@@ -5,7 +5,7 @@
 
 FROM alpine:3.21
 
-# Install essential packages
+# Install essential packages (gcompat for glibc compatibility on Alpine)
 RUN apk add --no-cache \
     bash \
     coreutils \
@@ -40,7 +40,22 @@ RUN apk add --no-cache \
     gawk \
     findutils \
     ca-certificates \
+    xz \
+    gcompat \
     && rm -rf /var/cache/apk/*
+
+# Install Nix package manager
+RUN addgroup -g 30000 -S nixbld && \
+    for i in $(seq 1 30); do adduser -S -D -h /var/empty -g "Nix build user $i" -u $((30000 + i)) -G nixbld nixbld$i ; done && \
+    mkdir -m 0755 /etc/nix /nix && \
+    echo 'sandbox = false' >> /etc/nix/nix.conf && \
+    echo 'experimental-features = nix-command flakes' >> /etc/nix/nix.conf && \
+    echo 'trusted-users = root opencode' >> /etc/nix/nix.conf && \
+    wget -q https://nixos.org/releases/nix/nix-2.24.9/nix-2.24.9-$(uname -m)-linux.tar.xz && \
+    tar xf nix-2.24.9-$(uname -m)-linux.tar.xz && \
+    USER=root sh nix-2.24.9-$(uname -m)-linux/install && \
+    rm -rf nix-2.24.9-* && \
+    ln -s /nix/var/nix/profiles/default/etc/profile.d/nix.sh /etc/profile.d/nix.sh
 
 # Create non-root user first
 RUN adduser -D -u 1000 -h /home/opencode opencode
@@ -48,51 +63,83 @@ RUN adduser -D -u 1000 -h /home/opencode opencode
 # Install bun as opencode user
 USER opencode
 ENV HOME=/home/opencode
+ENV BUN_INSTALL=/home/opencode/.bun
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/home/opencode/.bun/bin:$PATH"
 
 # Install uv (Python package manager) as opencode user
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install OpenCode via bun as opencode user
-RUN bun install -g opencode-ai
+# Install OpenCode via bun as opencode user (detect arch and install correct musl variant)
+RUN ARCH=$(uname -m) && \
+    case "$ARCH" in \
+        x86_64) MUSL_PKG="opencode-linux-x64-musl" ;; \
+        aarch64) MUSL_PKG="opencode-linux-arm64-musl" ;; \
+        *) echo "Unsupported arch: $ARCH" && exit 1 ;; \
+    esac && \
+    bun install -g opencode-ai "$MUSL_PKG" && \
+    # Manually link the correct musl binary since postinstall may pick the wrong one
+    ln -sf "/home/opencode/.bun/install/global/node_modules/$MUSL_PKG/bin/opencode" \
+           "/home/opencode/.bun/install/global/node_modules/opencode-ai/bin/.opencode"
 
 # Install language servers globally for LSP support
-RUN bun install -g typescript-language-server typescript vscode-langservers-extracted pyright yaml-language-server bash-language-server dockerfile-language-server-nodejs @biomejs/biome
+RUN bun install -g typescript-language-server typescript vscode-langservers-extracted pyright yaml-language-server bash-language-server dockerfile-language-server-nodejs @biomejs/biome @vtsls/language-server
 
 # Switch back to root for setup
 USER root
 
-# Create necessary directories
-RUN mkdir -p /workspace \
+# Create necessary directories with correct ownership
+# Note: Using install -o/-g to set ownership at creation time is much faster than chown -R
+RUN install -d -o opencode -g opencode /workspace \
     /home/opencode/.config/opencode \
     /home/opencode/.local/state \
     /home/opencode/.cache \
-    && chown -R opencode:opencode /home/opencode /workspace
+    /nix/var/nix/profiles/per-user/opencode && \
+    chown opencode:nixbld /nix/var/nix/profiles/per-user/opencode
 
-# Create entrypoint script
+# Install ast-grep via Nix system-wide (using full path since nix.sh not sourced in build)
+ENV PATH="/nix/var/nix/profiles/default/bin:$PATH"
+RUN /nix/var/nix/profiles/default/bin/nix-env -iA nixpkgs.ast-grep && \
+    ln -s /nix/var/nix/profiles/default/bin/ast-grep /nix/var/nix/profiles/default/bin/sg
+
+# Create entrypoint script with auto-update
 RUN printf '#!/bin/bash\n\
 set -e\n\
+\n\
+echo "Checking for opencode updates..."\n\
+ARCH=$(uname -m)\n\
+case "$ARCH" in\n\
+    x86_64) MUSL_PKG="opencode-linux-x64-musl" ;;\n\
+    aarch64) MUSL_PKG="opencode-linux-arm64-musl" ;;\n\
+    *) MUSL_PKG="" ;;\n\
+esac\n\
+bun install -g opencode-ai@latest "${MUSL_PKG}@latest" || echo "Update failed, continuing with existing version..."\n\
+# Ensure correct musl binary is linked\n\
+if [ -n "$MUSL_PKG" ]; then\n\
+    ln -sf "/home/opencode/.bun/install/global/node_modules/$MUSL_PKG/bin/opencode" \\\n\
+           "/home/opencode/.bun/install/global/node_modules/opencode-ai/bin/.opencode"\n\
+fi\n\
+opencode --version\n\
 \n\
 PORT="${PORT:-8888}"\n\
 HOSTNAME="${HOSTNAME:-0.0.0.0}"\n\
 \n\
 cd /workspace\n\
 \n\
-exec sudo -u opencode \\\n\
-    env HOME=/home/opencode \\\n\
-        USER=opencode \\\n\
-        PATH="/home/opencode/.bun/bin:$PATH" \\\n\
-        OPENCODE_SERVER_PASSWORD="$OPENCODE_SERVER_PASSWORD" \\\n\
-        opencode serve --hostname "$HOSTNAME" --port "$PORT"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+exec opencode serve --hostname "$HOSTNAME" --port "$PORT"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Create shell entrypoint for debugging
 RUN printf '#!/bin/bash\n\
 cd /workspace\n\
-exec sudo -u opencode env HOME=/home/opencode USER=opencode PATH="/home/opencode/.bun/bin:$PATH" bash\n' > /shell-entrypoint.sh && chmod +x /shell-entrypoint.sh
+exec bash\n' > /shell-entrypoint.sh && chmod +x /shell-entrypoint.sh
 
 WORKDIR /workspace
 
 EXPOSE 8888
+
+USER opencode
+ENV HOME=/home/opencode
+ENV BUN_INSTALL=/home/opencode/.bun
+ENV PATH="/home/opencode/.local/bin:/home/opencode/.bun/bin:/nix/var/nix/profiles/default/bin:$PATH"
 
 ENTRYPOINT ["/entrypoint.sh"]

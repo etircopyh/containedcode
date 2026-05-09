@@ -9,6 +9,85 @@
   in {
     packages = forAllSystems (system: let
       pkgs = import nixpkgs { inherit system; };
+
+      # Bundle all custom scripts into one package to ensure they are correctly placed in /bin
+      customScripts = pkgs.runCommand "custom-scripts" {} ''
+        mkdir -p $out/bin
+
+        # setup-permissions script
+        cat > $out/bin/setup-permissions <<'EOF'
+        #!${pkgs.bash}/bin/bash
+        set -e
+
+        # Nix store permissions
+        mkdir -p /nix/store/.links
+        mkdir -p /nix/var/nix/{db,profiles,gcroots,temproots,userpool}
+        mkdir -p /nix/var/nix/profiles/per-user/1000
+        chown -R 1000:1000 /nix 2>/dev/null || true
+        chmod -R 755 /nix 2>/dev/null || true
+
+        # User home directory - create dirs but don't fail on read-only mounts
+        mkdir -p /home/opencode/.config/opencode
+        mkdir -p /home/opencode/.local/state
+        mkdir -p /home/opencode/.cache
+        echo "" > /home/opencode/.bashrc 2>/dev/null || true
+
+        # Chown only writable directories, ignore read-only mounts
+        chown -R 1000:1000 /home/opencode/.local 2>/dev/null || true
+        chown -R 1000:1000 /home/opencode/.cache 2>/dev/null || true
+        chown 1000:1000 /home/opencode/.bashrc 2>/dev/null || true
+        chmod -R 755 /home/opencode/.local 2>/dev/null || true
+        chmod -R 755 /home/opencode/.cache 2>/dev/null || true
+
+        # Workspace directory
+        chown -R 1000:1000 /workspace 2>/dev/null || true
+        chmod -R 755 /workspace 2>/dev/null || true
+        EOF
+        chmod +x $out/bin/setup-permissions
+
+        # entrypoint script
+        cat > $out/bin/entrypoint <<'EOF'
+        #!${pkgs.bash}/bin/bash
+        set -e
+
+        # Setup permissions as root
+        /bin/setup-permissions
+
+        # Determine port (default 8888)
+        PORT="${"\${PORT:-8888}"}"
+        HOSTNAME="${"\${HOSTNAME:-127.0.0.1}"}"
+
+        # Change to workspace
+        cd /workspace
+
+        # Switch to opencode user and run server
+        exec ${pkgs.util-linux}/bin/setpriv --reuid=1000 --regid=1000 --init-groups \
+          env HOME=/home/opencode \
+              USER=opencode \
+              NIX_REMOTE= \
+              OPENCODE_SERVER_PASSWORD="$OPENCODE_SERVER_PASSWORD" \
+              opencode serve --hostname "$HOSTNAME" --port "$PORT"
+        EOF
+        chmod +x $out/bin/entrypoint
+
+        # shell-entrypoint script
+        cat > $out/bin/shell-entrypoint <<'EOF'
+        #!${pkgs.bash}/bin/bash
+        set -e
+
+        /bin/setup-permissions
+
+        cd /workspace
+
+        exec ${pkgs.util-linux}/bin/setpriv --reuid=1000 --regid=1000 --init-groups \
+          env HOME=/home/opencode \
+              USER=opencode \
+              NIX_REMOTE= \
+              ${pkgs.bash}/bin/bash
+        EOF
+        chmod +x $out/bin/shell-entrypoint
+      '';
+
     in {
       default = pkgs.dockerTools.buildLayeredImage {
         name = "opencode-server";
@@ -16,6 +95,9 @@
 
         # Comprehensive development environment
         contents = with pkgs; [
+          # Custom scripts
+          customScripts
+
           # Core system
           bashInteractive
           coreutils
@@ -46,8 +128,8 @@
           bun           # Node.js alternative
           nodejs_22
           uv            # Python package manager
-          python312
-          go_1_23
+          python
+          go_1_24
           rustc
           cargo
 
@@ -119,77 +201,6 @@
             mkdir -p $out/home/opencode/.config/opencode
             mkdir -p $out/home/opencode/.local/state
             mkdir -p $out/home/opencode/.cache
-          '')
-
-          # Permission setup script
-          (writeScriptBin "setup-permissions" ''
-            #!/bin/bash
-            set -e
-            
-            # Nix store permissions
-            mkdir -p /nix/store/.links
-            mkdir -p /nix/var/nix/{db,profiles,gcroots,temproots,userpool}
-            mkdir -p /nix/var/nix/profiles/per-user/1000
-            chown -R 1000:1000 /nix
-            chmod -R 755 /nix
-
-            # User home directory
-            mkdir -p /home/opencode/.config/opencode
-            mkdir -p /home/opencode/.local/state
-            mkdir -p /home/opencode/.cache
-            echo "" > /home/opencode/.bashrc
-            chown -R 1000:1000 /home/opencode
-            chmod -R 755 /home/opencode
-
-            # Workspace directory
-            chown -R 1000:1000 /workspace
-            chmod -R 755 /workspace
-          '')
-
-          # Container initialization script
-          (writeScriptBin "init-container" ''
-            #!/bin/bash
-            /bin/setup-permissions
-          '')
-
-          # Main entrypoint
-          (writeScriptBin "entrypoint" ''
-            #!/bin/bash
-            set -e
-
-            # Setup permissions as root
-            /bin/setup-permissions
-
-            # Determine port (default 8888)
-            PORT="${PORT:-8888}"
-            HOSTNAME="${HOSTNAME:-127.0.0.1}"
-
-            # Change to workspace
-            cd /workspace
-
-            # Switch to opencode user and run server
-            exec setpriv --reuid=1000 --regid=1000 --init-groups \
-              env HOME=/home/opencode \
-                  USER=opencode \
-                  NIX_REMOTE= \
-                  OPENCODE_SERVER_PASSWORD="$OPENCODE_SERVER_PASSWORD" \
-                  opencode serve --hostname "$HOSTNAME" --port "$PORT"
-          '')
-
-          # Shell entrypoint for debugging/interactive use
-          (writeScriptBin "shell-entrypoint" ''
-            #!/bin/bash
-            set -e
-
-            /bin/setup-permissions
-
-            cd /workspace
-
-            exec setpriv --reuid=1000 --regid=1000 --init-groups \
-              env HOME=/home/opencode \
-                  USER=opencode \
-                  NIX_REMOTE= \
-                  bash
           '')
         ];
 
