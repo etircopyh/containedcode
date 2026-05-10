@@ -2,6 +2,93 @@
 
 This document describes the tools available in the OpenCode server container.
 
+## Pi Coding Agent
+
+Pi runs inside a **tmux session** so it stays alive in the background. You can attach and detach at will — Pi keeps working.
+
+### Connecting to Pi
+
+| Method | Command |
+|--------|---------|
+| **Local (docker)** | `docker exec -it --user opencode opencode-server tmux attach` |
+| **Local (helper)** | `./pi.sh attach` |
+| **Remote (SSH)** | `ssh -p 2222 opencode@server-ip` then `tmux attach` |
+
+### Tmux Quick Reference
+
+| Action | Shortcut |
+|--------|----------|
+| **Detach** (Pi keeps running) | `Ctrl+b` then `d` |
+| **Scroll up** | `Ctrl+b` then `[` (q to exit scroll) |
+| **Split horizontal** | `Ctrl+b` then `"` |
+| **Split vertical** | `Ctrl+b` then `%` |
+| **New window** | `Ctrl+b` then `c` |
+| **Switch panes** | `Ctrl+b` then arrow key |
+
+### SSH Remote Access Setup
+
+To connect from another machine:
+
+1. **Add your SSH public key** to `~/.ssh/authorized_keys` on the host:
+   ```bash
+   echo 'ssh-ed25519 AAAA...' >> ~/.ssh/authorized_keys
+   ```
+
+2. **Connect from your PC**:
+   ```bash
+   ssh -p 2222 opencode@your-server-ip
+   ```
+
+3. **Attach to Pi**:
+   ```bash
+   tmux attach -t pi
+   ```
+
+4. **Detach** without stopping Pi: `Ctrl+b` then `d`
+
+### Autonomous / Continuous Mode
+
+Pi can run autonomously using [pi-infinity](https://github.com/lee101/pi-infinity):
+
+```bash
+# Install pi-infinity inside the container
+./pi.sh shell
+npm install -g @codex-infinity/pi-infinity
+
+# Then set in .env:
+# PI_COMMAND=pinf
+# PI_ARGS=--auto-next-steps
+```
+
+Or use Pi's built-in `--mode json` or `--mode rpc` for programmatic control:
+
+```bash
+# Inside the container:
+pi --mode json "Your task"     # Stream events as JSON
+pi --mode rpc                  # Headless RPC over stdin/stdout
+```
+
+### Pi Helper Commands
+
+```bash
+./pi.sh attach           # Connect to Pi
+./pi.sh send "msg"       # Send a message to Pi
+./pi.sh restart           # Restart Pi
+./pi.sh logs              # Show recent output
+./pi.sh status            # Check if running
+./pi.sh install <pkg>     # Install a Pi package
+./pi.sh update            # Update Pi
+```
+
+### Pi Config & Sessions
+
+Pi config is mounted from `~/.pi` on the host:
+- `~/.pi/agent/settings.json` — Pi settings
+- `~/.pi/agent/sessions/` — Saved sessions (persisted)
+- `~/.pi/agent/extensions/` — Custom extensions
+- `~/.pi/agent/skills/` — Custom skills
+- `~/.pi/agent/prompts/` — Prompt templates
+
 ## Package Managers
 
 ### Nix (Primary)
@@ -123,7 +210,7 @@ Language servers provide IDE features (autocomplete, go-to-definition, diagnosti
 - Node.js 22 + npm
 - Bun (canary)
 - Python 3.12 + uv
-- Go 1.26
+- Go 1.24
 - Rust + Cargo
 
 ### Database Clients
@@ -139,6 +226,8 @@ Language servers provide IDE features (autocomplete, go-to-definition, diagnosti
 - gcc, g++
 - nano, vim
 - htop
+- tmux
+- openssh-server
 
 ### AST Tools
 - **ast-grep** - AST-based code search and replace
@@ -182,10 +271,12 @@ If you need a tool not listed here:
 
 ## Persistent Storage
 
-Packages installed via Nix and Bun are persisted between container restarts via Docker volumes:
-- `/nix` - Nix store
-- `/home/opencode/.local` - Bun global packages and uv tools
-- `/home/opencode/.cache` - Package caches
+The following data is persisted between container restarts via Docker volumes:
+- `/nix` — Nix store (installed packages)
+- `/home/opencode/.local` — Bun global packages, uv tools, OpenCode data
+- `/home/opencode/.cache` — Package caches
+- `/home/opencode/.pi` — Pi config, sessions, extensions (mounted from host)
+- `/workspace` — Your project files (mounted from host)
 
 > **Note:** Named Docker volumes are empty on first mount. The container entrypoint
 > automatically copies build-time content into fresh volumes. Subsequent restarts
@@ -198,3 +289,5 @@ Packages installed via Nix and Bun are persisted between container restarts via 
 - Sandbox is disabled for compatibility
 - 30 nix build users are configured for multi-user mode
 - Auto-update on container start can be disabled with `OPENCODE_AUTO_UPDATE=false`
+- Pi runs in a tmux session named `pi` — attach with `tmux attach -t pi`
+- SSH access on port 2222 (key-based auth only)

@@ -1,11 +1,16 @@
 # OpenCode Server - Secure Container Configuration
 # 
 # Usage:
-#   OPENCODE_SERVER_PASSWORD=your-password ./start.sh
-#   PORT=9999 OPENCODE_SERVER_PASSWORD=your-password ./start.sh
+#   ./start.sh                   (Pi in tmux + SSH access)
+#   ./start.sh --opencode        (Pi + OpenCode web server)
+#   ./start.sh --shell           (Interactive shell)
 #
-# For interactive shell (debugging):
-#   docker compose run --rm opencode-server /bin/shell-entrypoint
+# Connect via SSH:
+#   ssh -p 2222 opencode@localhost         (then: tmux attach)
+#   ssh -p 2222 opencode@your-server-ip    (from another machine)
+#
+# Connect via docker exec (no SSH needed on localhost):
+#   docker exec -it opencode-server tmux attach
 
 services:
   opencode-server:
@@ -15,28 +20,40 @@ services:
     image: opencode-server:latest
     container_name: opencode-server
     
-    # Port configuration (configurable via PORT env var)
+    # Port configuration
     ports:
+      # OpenCode web server (optional, enabled with OPENCODE_SERVER_ENABLED=true)
       - "${PORT:-8888}:${PORT:-8888}"
+      # SSH for remote Pi/tmux access
+      - "${SSH_PORT:-2222}:2222"
     
     # Environment configuration
     environment:
-      - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD}
+      - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-}
+      - OPENCODE_SERVER_ENABLED=${OPENCODE_SERVER_ENABLED:-false}
       - PORT=${PORT:-8888}
       - HOSTNAME=0.0.0.0
+      - PI_COMMAND=${PI_COMMAND:-pi}
+      - PI_ARGS=${PI_ARGS:-}
+      - OPENCODE_AUTO_UPDATE=${OPENCODE_AUTO_UPDATE:-true}
     
     # Volume mounts
     volumes:
       # Project workspace - your code goes here
       - ./workspace:/workspace:rw
       
-      # OpenCode config directory (contains opencode.json, oh-my-opencode.json, etc.)
+      # OpenCode config directory (contains opencode.json with API keys)
       # Read-only for security - API keys and settings protected
       - ${OPENCODE_CONFIG_DIR:-~/.config/opencode}:/home/opencode/.config/opencode:ro
       
+      # Pi agent config (extensions, skills, prompts, settings, sessions)
+      - ${PI_CONFIG_DIR:-~/.pi}:/home/opencode/.pi:rw
+      
+      # SSH authorized keys for remote access
+      # Mount your public key so you can SSH in from other machines
+      - ${SSH_AUTHORIZED_KEYS:-~/.ssh/authorized_keys}:/home/opencode/.ssh/authorized_keys:ro
+      
       # Persist Nix packages between runs
-      # NOTE: Named volumes hide image content on first mount. The entrypoint
-      # copies build-time content into the volume if it's empty (see entrypoint init logic).
       - nix-store:/nix:rw
       
       # Persist opencode data (sessions, bun global packages, uv tools, etc.)
@@ -48,7 +65,7 @@ services:
     # Security settings
     security_opt:
       - no-new-privileges:true
-    read_only: false  # Required for Nix to work
+    read_only: false  # Required for Nix + SSH to work
     
     # Resource limits (adjust as needed)
     deploy:
@@ -58,15 +75,15 @@ services:
         reservations:
           memory: 512M
     
-    # Health check
+    # Health check - check SSH is responding
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:$${PORT:-8888}/health || exit 1"]
+      test: ["CMD-SHELL", "pgrep sshd && (tmux has-session -t pi 2>/dev/null || true) || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 15s
     
-    # Restart policy
+    # Restart policy - always restart so Pi comes back after host reboot
     restart: unless-stopped
     
     # Logging

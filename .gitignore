@@ -25,3 +25,9 @@ docker-compose.override.yml
 # IDE
 .vscode/
 .idea/
+
+# Config files copied into Docker image (not sensitive, but build artifacts)
+# These are tracked in git since they define container behavior
+
+# SSH host keys (generated at runtime, contain secrets)
+ssh_host_*
