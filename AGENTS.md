@@ -1,6 +1,6 @@
 # Container Tools Reference
 
-This document describes the tools available in the OpenCode server container.
+This document describes the tools available in the ContainedCode container.
 
 ## Pi Coding Agent
 
@@ -10,7 +10,7 @@ Pi runs inside a **tmux session** so it stays alive in the background. You can a
 
 | Method | Command |
 |--------|---------|
-| **Local (docker)** | `docker exec -it --user opencode opencode-server tmux attach` |
+| **Local (docker)** | `docker exec -it --user opencode containedcode tmux attach` |
 | **Local (helper)** | `./pi.sh attach` |
 | **Remote (SSH)** | `ssh -p 2222 opencode@server-ip` then `tmux attach` |
 
@@ -18,7 +18,7 @@ Pi runs inside a **tmux session** so it stays alive in the background. You can a
 
 | Action | Shortcut |
 |--------|----------|
-| **Detach** (Pi keeps running) | `Ctrl+b` then `d` |
+| **Detach** (agent keeps running) | `Ctrl+b` then `d` |
 | **Scroll up** | `Ctrl+b` then `[` (q to exit scroll) |
 | **Split horizontal** | `Ctrl+b` then `"` |
 | **Split vertical** | `Ctrl+b` then `%` |
@@ -39,12 +39,12 @@ To connect from another machine:
    ssh -p 2222 opencode@your-server-ip
    ```
 
-3. **Attach to Pi**:
+3. **Attach to the agent**:
    ```bash
-   tmux attach -t pi
+   tmux attach -t agent
    ```
 
-4. **Detach** without stopping Pi: `Ctrl+b` then `d`
+4. **Detach** without stopping the agent: `Ctrl+b` then `d`
 
 ### Autonomous / Continuous Mode
 
@@ -288,6 +288,6 @@ The following data is persisted between container restarts via Docker volumes:
 - The user `opencode` is trusted for Nix operations
 - Sandbox is disabled for compatibility
 - 30 nix build users are configured for multi-user mode
-- Auto-update on container start can be disabled with `OPENCODE_AUTO_UPDATE=false`
-- Pi runs in a tmux session named `pi` — attach with `tmux attach -t pi`
+- Auto-update on container start can be disabled with `AUTO_UPDATE=false` (or `OPENCODE_AUTO_UPDATE=false`)
+- Pi runs in a tmux session named `agent` — attach with `tmux attach -t agent`
 - SSH access on port 2222 (key-based auth only)

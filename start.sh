@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 #
-# OpenCode Server - Container Launcher
+# ContainedCode - Universal Coding Agent Container
 #
-# Runs Pi coding agent inside tmux with SSH access for remote attach/detach.
+# Runs AI coding agents (Pi, Codex CLI, Amp, etc.) inside tmux
+# with SSH access and an optional web IDE server.
 #
 # Usage:
-#   ./start.sh                    Start Pi in tmux + SSH (detached)
-#   ./start.sh --attach           Attach to the running Pi tmux session
-#   ./start.sh --opencode         Also start the OpenCode web server
+#   ./start.sh                    Start agent in tmux + SSH (detached)
+#   ./start.sh --attach           Attach to the running tmux session
+#   ./start.sh --web              Also start the web IDE server (OpenCode)
 #   ./start.sh --build            Force rebuild the image
 #   ./start.sh --shell            Open interactive shell inside container
 #   ./start.sh --stop             Stop the container
@@ -17,18 +18,21 @@
 #   ssh -p 2222 opencode@server-ip    then: tmux attach
 #
 # Connect locally without SSH:
-#   docker exec -it opencode-server tmux attach
+#   docker exec -it containedcode tmux attach
 #
 # Environment Variables:
-#   OPENCODE_SERVER_PASSWORD   (optional) Password for OpenCode web server
-#   PORT                       (optional) OpenCode web server port (default: 8888)
-#   SSH_PORT                   (optional) SSH port mapped to host (default: 2222)
-#   OPENCODE_CONFIG_DIR        (optional) Path to OpenCode config (default: ~/.config/opencode)
-#   PI_CONFIG_DIR              (optional) Path to Pi config (default: ~/.pi)
-#   SSH_AUTHORIZED_KEYS        (optional) Path to authorized_keys (default: ~/.ssh/authorized_keys)
-#   PI_COMMAND                 (optional) Pi command override (default: pi)
-#   PI_ARGS                    (optional) Extra args for Pi (e.g. "--auto-next-steps")
-#   OPENCODE_AUTO_UPDATE       (optional) Auto-update on start (default: true)
+#   AGENT_CMD                  Agent command (default: pi; overrides PI_COMMAND)
+#   AGENT_ARGS                 Extra args for agent (overrides PI_ARGS)
+#   PI_COMMAND                 Pi command override (default: pi)
+#   PI_ARGS                    Extra args for Pi (e.g. --auto-next-steps)
+#   WEB_SERVER_PASSWORD        Password for web IDE server (enables server)
+#   WEB_SERVER_ENABLED         Force enable/disable web server (default: auto)
+#   PORT                       Web server port (default: 8888)
+#   SSH_PORT                   SSH port mapped to host (default: 2222)
+#   WEB_CONFIG_DIR             Path to web IDE config (default: ~/.config/opencode)
+#   AGENT_CONFIG_DIR           Path to agent config (default: ~/.pi)
+#   SSH_AUTHORIZED_KEYS        Path to authorized_keys (default: ~/.ssh/authorized_keys)
+#   AUTO_UPDATE                Auto-update opencode on start (default: true)
 
 set -e
 
@@ -51,21 +55,33 @@ NC='\033[0m'
 PORT="${PORT:-8888}"
 SSH_PORT="${SSH_PORT:-2222}"
 BUILD=false
-DETACH=true           # Default to detached (Pi runs in background)
+DETACH=true
 SHOW_LOGS=false
 SHELL_MODE=false
 STOP_MODE=false
 ATTACH_MODE=false
-OPENCODE_ENABLED="${OPENCODE_SERVER_ENABLED:-false}"
+
+# Enable web server by default when a password is configured.
+# Explicit WEB_SERVER_ENABLED=false still disables it.
+if [ -n "$WEB_SERVER_PASSWORD" ] && [ "${WEB_SERVER_ENABLED:-true}" != "false" ]; then
+    WEB_ENABLED=true
+else
+    WEB_ENABLED="${WEB_SERVER_ENABLED:-false}"
+fi
+
+# Also check legacy OPENCODE_SERVER_* vars for backward compatibility
+if [ "$WEB_ENABLED" != "true" ] && [ -n "$OPENCODE_SERVER_PASSWORD" ] && [ "${OPENCODE_SERVER_ENABLED:-true}" != "false" ]; then
+    WEB_ENABLED=true
+fi
 
 # Config directories
-CONFIG_DIR="${OPENCODE_CONFIG_DIR:-$HOME/.config/opencode}"
-PI_DIR="${PI_CONFIG_DIR:-$HOME/.pi}"
+CONFIG_DIR="${WEB_CONFIG_DIR:-${OPENCODE_CONFIG_DIR:-$HOME/.config/opencode}}"
+AGENT_DIR="${AGENT_CONFIG_DIR:-${PI_CONFIG_DIR:-$HOME/.pi}}"
 SSH_KEYS="${SSH_AUTHORIZED_KEYS:-$HOME/.ssh/authorized_keys}"
 
 # Expand tildes
 CONFIG_DIR="${CONFIG_DIR/#\~/$HOME}"
-PI_DIR="${PI_DIR/#\~/$HOME}"
+AGENT_DIR="${AGENT_DIR/#\~/$HOME}"
 SSH_KEYS="${SSH_KEYS/#\~/$HOME}"
 
 # Parse arguments
@@ -79,8 +95,8 @@ while [[ $# -gt 0 ]]; do
             ATTACH_MODE=true
             shift
             ;;
-        --opencode)
-            OPENCODE_ENABLED=true
+        --web|--opencode)
+            WEB_ENABLED=true
             shift
             ;;
         --foreground|-f)
@@ -101,15 +117,16 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --help|-h)
-            echo "OpenCode Server - Container Launcher"
+            echo "ContainedCode - Universal Coding Agent Container"
             echo ""
-            echo "Runs Pi coding agent inside tmux with SSH access."
+            echo "Runs AI coding agents (Pi, Codex CLI, Amp, etc.) inside tmux with SSH access."
+            echo "An optional web IDE server provides a browser-based coding interface."
             echo ""
             echo "Usage: ./start.sh [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --attach, -a    Attach to the running Pi tmux session"
-            echo "  --opencode      Also start the OpenCode web server"
+            echo "  --attach, -a    Attach to the running tmux session"
+            echo "  --web           Also start the web IDE server"
             echo "  --foreground    Run in foreground (not detached)"
             echo "  --build         Force rebuild the image"
             echo "  --logs          Show logs after starting (implies detached)"
@@ -117,23 +134,30 @@ while [[ $# -gt 0 ]]; do
             echo "  --stop          Stop the container"
             echo "  --help          Show this help"
             echo ""
-            echo "Connecting to Pi:"
-            echo "  Local:    docker exec -it opencode-server tmux attach"
-            echo "  Remote:   ssh -p 2222 opencode@<server-ip>"
+            echo "Agents (set AGENT_CMD in .env):"
+            echo "  pi             Pi coding agent (default)"
+            echo "  codex          Codex CLI by OpenAI"
+            echo "  amp            Amp"
+            echo ""
+            echo "Connecting:"
+            echo "  Local:    docker exec -it containedcode tmux attach"
+            echo "  Remote:   ssh -p ${SSH_PORT:-2222} opencode@<server-ip>"
             echo "            then: tmux attach"
             echo ""
-            echo "Detaching from Pi (inside tmux):"
+            echo "Detaching from tmux:"
             echo "  Ctrl+b then d"
             echo ""
             echo "Environment Variables:"
-            echo "  PI_COMMAND              Pi command (default: pi)"
-            echo "  PI_ARGS                 Extra Pi args (e.g. --auto-next-steps)"
-            echo "  SSH_PORT                Host SSH port (default: 2222)"
-            echo "  PORT                    OpenCode web port (default: 8888)"
-            echo "  OPENCODE_CONFIG_DIR     OpenCode config path (default: ~/.config/opencode)"
-            echo "  PI_CONFIG_DIR           Pi config path (default: ~/.pi)"
-            echo "  SSH_AUTHORIZED_KEYS     authorized_keys path (default: ~/.ssh/authorized_keys)"
-            echo "  OPENCODE_AUTO_UPDATE    Auto-update on start (default: true)"
+            echo "  AGENT_CMD / PI_COMMAND    Agent command (default: pi)"
+            echo "  AGENT_ARGS / PI_ARGS      Extra agent args"
+            echo "  WEB_SERVER_PASSWORD       Web IDE password (enables server)"
+            echo "  WEB_SERVER_ENABLED        Force enable/disable web server"
+            echo "  PORT                      Web server port (default: 8888)"
+            echo "  SSH_PORT                  Host SSH port (default: 2222)"
+            echo "  WEB_CONFIG_DIR            Web IDE config path"
+            echo "  AGENT_CONFIG_DIR          Agent config path (default: ~/.pi)"
+            echo "  SSH_AUTHORIZED_KEYS       authorized_keys path"
+            echo "  AUTO_UPDATE               Auto-update on start (default: true)"
             exit 0
             ;;
         *)
@@ -144,16 +168,16 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# --- Attach mode: connect to existing Pi tmux session ---
+# --- Attach mode ---
 if $ATTACH_MODE; then
-    if ! docker ps --format '{{.Names}}' | grep -q '^opencode-server$'; then
+    if ! docker ps --format '{{.Names}}' | grep -q '^containedcode$'; then
         echo -e "${RED}Container is not running. Start it first: ./start.sh${NC}"
         exit 1
     fi
-    echo -e "${CYAN}Attaching to Pi tmux session...${NC}"
+    echo -e "${CYAN}Attaching to tmux session...${NC}"
     echo -e "${YELLOW}Detach with Ctrl+b then d${NC}"
     echo ""
-    docker exec -it --user opencode -e TERM=xterm-256color opencode-server tmux attach -t pi
+    docker exec -it --user opencode -e TERM=xterm-256color containedcode tmux attach -t agent
     exit 0
 fi
 
@@ -167,26 +191,21 @@ fi
 
 # --- Pre-flight checks ---
 
-# Check SSH authorized keys exist
 if [[ ! -f "$SSH_KEYS" ]]; then
     echo -e "${YELLOW}WARNING: SSH authorized_keys not found at $SSH_KEYS${NC}"
     echo -e "${YELLOW}You won't be able to SSH in remotely. Only docker exec will work.${NC}"
-    echo -e "${YELLOW}To fix: create the file and add your public key${NC}"
     echo ""
-    # Create a placeholder so the mount doesn't fail
     mkdir -p "$(dirname "$SSH_KEYS")"
     touch "$SSH_KEYS"
 fi
 
-# Check Pi config directory
-if [[ ! -d "$PI_DIR" ]]; then
-    echo -e "${YELLOW}Creating Pi config directory at $PI_DIR${NC}"
-    mkdir -p "$PI_DIR/agent/sessions"
+if [[ ! -d "$AGENT_DIR" ]]; then
+    echo -e "${YELLOW}Creating agent config directory at $AGENT_DIR${NC}"
+    mkdir -p "$AGENT_DIR/agent/sessions"
 fi
 
-# Check OpenCode config directory
 if [[ ! -d "$CONFIG_DIR" ]]; then
-    echo -e "${YELLOW}Creating OpenCode config directory at $CONFIG_DIR${NC}"
+    echo -e "${YELLOW}Creating web IDE config directory at $CONFIG_DIR${NC}"
     mkdir -p "$CONFIG_DIR"
     if [[ ! -f "$CONFIG_DIR/opencode.json" ]]; then
         cat > "$CONFIG_DIR/opencode.json" << 'EOF'
@@ -199,23 +218,22 @@ EOF
     fi
 fi
 
-# Create workspace directory
 mkdir -p ./workspace
 
 # --- Export environment for docker-compose ---
-export OPENCODE_SERVER_PASSWORD="${OPENCODE_SERVER_PASSWORD:-}"
-export OPENCODE_SERVER_ENABLED="$OPENCODE_ENABLED"
+export WEB_SERVER_PASSWORD="${WEB_SERVER_PASSWORD:-${OPENCODE_SERVER_PASSWORD:-}}"
+export WEB_SERVER_ENABLED="$WEB_ENABLED"
 export PORT
 export SSH_PORT
-export OPENCODE_CONFIG_DIR="$CONFIG_DIR"
-export PI_CONFIG_DIR="$PI_DIR"
+export WEB_CONFIG_DIR="$CONFIG_DIR"
+export AGENT_CONFIG_DIR="$AGENT_DIR"
 export SSH_AUTHORIZED_KEYS="$SSH_KEYS"
-export PI_COMMAND="${PI_COMMAND:-pi}"
-export PI_ARGS="${PI_ARGS:-}"
-export OPENCODE_AUTO_UPDATE="${OPENCODE_AUTO_UPDATE:-true}"
+export AGENT_CMD="${AGENT_CMD:-${PI_COMMAND:-pi}}"
+export AGENT_ARGS="${AGENT_ARGS:-${PI_ARGS:-}}"
+export AUTO_UPDATE="${AUTO_UPDATE:-${OPENCODE_AUTO_UPDATE:-true}}"
 
 # --- Build or pull image ---
-if $BUILD || [[ ! $(docker images -q opencode-server:latest 2>/dev/null) ]]; then
+if $BUILD || [[ ! $(docker images -q containedcode:latest 2>/dev/null) ]]; then
     echo -e "${BLUE}Building container image...${NC}"
     docker compose build
 fi
@@ -223,16 +241,16 @@ fi
 # --- Run container ---
 if $SHELL_MODE; then
     echo -e "${BLUE}Starting interactive shell...${NC}"
-    docker compose run --rm opencode-server /bin/shell-entrypoint
+    docker compose run --rm containedcode /bin/shell-entrypoint
 else
     echo -e "${BLUE}Starting container...${NC}"
     echo ""
-    echo -e "  ${CYAN}Pi agent${NC}      : running in tmux session 'pi'"
+    echo -e "  ${CYAN}Agent${NC}         : running in tmux session 'agent'"
     echo -e "  ${CYAN}SSH access${NC}    : ssh -p $SSH_PORT opencode@localhost"
-    echo -e "  ${CYAN}Local access${NC}  : docker exec -it --user opencode opencode-server tmux attach"
+    echo -e "  ${CYAN}Local access${NC}  : docker exec -it --user opencode containedcode tmux attach"
     echo -e "  ${CYAN}Detach tmux${NC}   : Ctrl+b then d"
-    if [[ "$OPENCODE_ENABLED" == "true" ]]; then
-        echo -e "  ${CYAN}Web server${NC}   : http://localhost:$PORT"
+    if [[ "$WEB_ENABLED" == "true" ]]; then
+        echo -e "  ${CYAN}Web IDE${NC}       : http://localhost:$PORT"
     fi
     echo ""
 
@@ -241,7 +259,7 @@ else
         echo -e "${GREEN}Container started in background!${NC}"
         echo ""
         echo "Quick commands:"
-        echo "  ./start.sh --attach    # Connect to Pi"
+        echo "  ./start.sh --attach    # Connect to agent"
         echo "  ./start.sh --stop      # Stop everything"
         echo "  docker compose logs -f  # View logs"
 

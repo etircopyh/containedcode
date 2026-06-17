@@ -1,7 +1,7 @@
-# OpenCode Server - Secure Container
+# ContainedCode — Universal Coding Agent Container
 
 <p align="center">
-  <strong>Production-ready Docker container for OpenCode server with complete isolation</strong>
+  <strong>Run any AI coding agent (Pi, Codex CLI, Amp, etc.) in a secure, pre-configured container with SSH access and an optional web IDE server.</strong>
 </p>
 
 <p align="center">
@@ -9,115 +9,84 @@
   <img src="https://img.shields.io/badge/platforms-linux%2Famd64%2C%20linux%2Farm64-blue" alt="Multi-platform">
 </p>
 
-<p align="center">
-  <a href="#features">Features</a> •
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#usage">Usage</a> •
-  <a href="#project-management">Project Management</a> •
-  <a href="#configuration">Configuration</a> •
-  <a href="#security">Security</a>
-</p>
-
 ---
 
-## Table of Contents
+## What is ContainedCode?
 
-- [Features](#features)
-- [Quick Start](#quick-start)
-- [Requirements](#requirements)
-- [Usage](#usage)
-  - [Starting the Server](#starting-the-server)
-  - [Stopping the Server](#stopping-the-server)
-  - [Interactive Shell](#interactive-shell)
-  - [Force Rebuild](#force-rebuild)
-- [Project Management](#project-management)
-  - [Adding Projects](#adding-projects)
-  - [Managing Projects](#managing-projects)
-  - [Switching Projects in Web UI](#switching-projects-in-web-ui)
-  - [Directory Structure](#directory-structure)
-- [Configuration](#configuration)
-  - [OpenCode Config Directory](#opencode-config-directory)
-  - [Environment Variables](#environment-variables)
-- [Project Structure](#project-structure)
-- [Security](#security)
-- [Installing Additional Packages](#installing-additional-packages)
-- [Pre-installed Tools](#pre-installed-tools)
-- [Connecting Remotely](#connecting-remotely)
-- [Troubleshooting](#troubleshooting)
-- [Building from Source](#building-from-source)
-- [License](#license)
-- [Acknowledgments](#acknowledgments)
+A batteries-included Docker container that gives you:
 
----
-
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| **Complete Isolation** | No access to host `$HOME`, only mounted workspace |
-| **Password Protected** | Server requires authentication via `OPENCODE_SERVER_PASSWORD` |
-| **Pre-installed Tools** | git, node, python, go, rust, postgresql, redis, mongodb, and more |
-| **Unlimited Autonomy** | Nix package manager with 80,000+ packages for on-demand installation |
-| **Non-root User** | Runs as UID 1000 for security best practices |
-| **Configurable Port** | Change via `PORT` environment variable |
-| **Read-only Config** | Your `opencode.json` with API keys is mounted read-only |
+- **Multiple AI coding agents** — Pi, Codex CLI, and Amp pre-installed. Switch with `AGENT_CMD=codex`.
+- **Web IDE server** — optional OpenCode server for browser-based editing.
+- **SSH access** — connect from anywhere, attach to the tmux session, and work remotely.
+- **80,000+ packages** via Nix — install anything on the fly.
+- **Pre-installed tools** — git, Node.js, Python, Go, Rust, PostgreSQL client, Redis CLI, and more.
+- **Persistent workspace** — your code and config survive container restarts.
+- **Language servers** — TypeScript, Python, Go, Rust, Lua, YAML, Bash, Dockerfile, HTML/CSS/JSON.
 
 ---
 
 ## Quick Start
 
-### Option 1: Use Pre-built Image (Recommended)
-
-Pull the image from GitHub Container Registry:
-
 ```bash
-# Pull latest (auto-selects your architecture)
-docker pull ghcr.io/etircopyh/containedcode:latest
+# 1. Set your password and choose an agent
+cp .env.example .env
+# Edit .env: set WEB_SERVER_PASSWORD=your-password
 
-# Run directly
-docker run -it --rm \
-  -p 8888:8888 \
-  -v $(pwd)/workspace:/workspace \
-  -v ~/.config/opencode:/home/opencode/.config/opencode:ro \
-  -e OPENCODE_SERVER_PASSWORD=your-secret-password \
-  ghcr.io/etircopyh/containedcode:latest
+# 2. Start the container
+./start.sh
+
+# 3. Attach to the agent
+./start.sh --attach
 ```
 
-### Option 2: Build Locally
+To also start the web IDE server (requires a password):
 
 ```bash
-# 1. Start the server (will prompt for password if not set)
-OPENCODE_SERVER_PASSWORD=your-secret-password ./start.sh
+WEB_SERVER_PASSWORD=secret ./start.sh --web
+```
 
-# 2. Connect from any OpenCode client
+Connect from an OpenCode client:
+
+```bash
 opencode attach http://localhost:8888
 # Username: opencode
-# Password: your-secret-password
+# Password: your-password
 ```
 
 ---
 
-## Available Images
+## Pre-built Images
 
-Pre-built multi-platform images are published to [GitHub Container Registry](https://github.com/etircopyh/containedcode/pkgs/container/containedcode):
+Multi-platform images (linux/amd64, linux/arm64) are published to GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/etircopyh/containedcode:latest
+```
 
 | Tag | Description |
 |-----|-------------|
-| `latest` | Latest release (recommended) |
+| `latest` | Latest release |
 | `v1.2.3` | Specific version |
 | `main` | Latest commit on main branch |
-| `sha-abc123` | Specific commit |
-
-All images support `linux/amd64` and `linux/arm64`.
 
 ---
 
-## Requirements
+## Available Agents
 
-| Requirement | Status | Notes |
-|-------------|--------|-------|
-| Docker | **Required** | Essential for containerization |
-| Nix with flakes | Optional | For building from source |
+| Agent | AGENT_CMD | Status | Notes |
+|-------|-----------|--------|-------|
+| Pi | `pi` (default) | ✅ Works | v0.79.6 |
+| Codex CLI | `codex` | ✅ Works | v0.140.0 |
+| Amp | `amp` | ⚠️ Binary on disk | Requires glibc (not Alpine's musl) |
+
+Switch agents by setting `AGENT_CMD` in `.env`:
+
+```bash
+# .env
+AGENT_CMD=codex
+AGENT_ARGS=
+WEB_SERVER_PASSWORD=your-password
+```
 
 ---
 
@@ -126,29 +95,26 @@ All images support `linux/amd64` and `linux/arm64`.
 ### Starting the Server
 
 ```bash
-# Basic start (foreground)
-OPENCODE_SERVER_PASSWORD=secret ./start.sh
+# Default (agent in tmux + SSH, detached)
+./start.sh
 
-# Run in background
-OPENCODE_SERVER_PASSWORD=secret ./start.sh --detach
+# With web IDE server
+./start.sh --web
 
-# Run with logs
-OPENCODE_SERVER_PASSWORD=secret ./start.sh --logs
+# In foreground
+./start.sh --foreground
 
-# Custom port
-PORT=9999 OPENCODE_SERVER_PASSWORD=secret ./start.sh
-
-# Generate random password
-OPENCODE_SERVER_PASSWORD=$(openssl rand -base64 32) ./start.sh
+# With a specific agent
+AGENT_CMD=codex ./start.sh
 ```
 
-### Stopping the Server
+### Stopping
 
 ```bash
 ./start.sh --stop
 ```
 
-### Interactive Shell (Debugging)
+### Interactive Shell
 
 ```bash
 ./start.sh --shell
@@ -160,278 +126,89 @@ OPENCODE_SERVER_PASSWORD=$(openssl rand -base64 32) ./start.sh
 ./start.sh --build
 ```
 
----
-
-## Project Management
-
-> **Note:** The workspace uses **project subdirectories** — one server, multiple projects accessible inside.
-
-### Adding Projects
-
-#### Option 1: Copy project into workspace (isolated copy)
+### Attaching to the Agent
 
 ```bash
-./project.sh copy ~/projects/my-app
+# Locally
+./start.sh --attach
+
+# Via SSH
+ssh -p 2222 opencode@localhost
+tmux attach -t agent
+
+# Via docker exec
+docker exec -it containedcode tmux attach
 ```
 
-#### Option 2: Mount external project (live sync with original)
-
-```bash
-./project.sh mount ~/projects/my-app
-./project.sh apply    # Generates docker-compose.override.yml
-# Restart server to apply
-```
-
-### Managing Projects
-
-```bash
-# List all projects
-./project.sh list
-
-# Create new project directory
-./project.sh create new-project
-
-# Remove project from workspace
-./project.sh remove my-app
-
-# Open shell in specific project
-./project.sh shell my-app
-```
-
-### Using Without Cloning the Repository
-
-If you don't want to clone the repo, you can use the pre-built image directly with Docker:
-
-```bash
-# Create a workspace directory
-mkdir -p ~/opencode-workspace
-cd ~/opencode-workspace
-
-# Run the container directly
-docker run -it --rm \
-  -p 8888:8888 \
-  -v $(pwd):/workspace \
-  -v ~/.config/opencode:/home/opencode/.config/opencode:ro \
-  -e OPENCODE_SERVER_PASSWORD=your-secret-password \
-  ghcr.io/etircopyh/containedcode:latest
-
-# Or run with shell access
-docker run -it --rm \
-  -v $(pwd):/workspace \
-  -v ~/.config/opencode:/home/opencode/.config/opencode:ro \
-  ghcr.io/etircopyh/containedcode:latest /bin/shell-entrypoint
-```
-
-**Mounting external projects directly:**
-
-```bash
-# Mount your existing project without copying
-docker run -it --rm \
-  -p 8888:8888 \
-  -v /path/to/your/project:/workspace/my-project \
-  -v ~/.config/opencode:/home/opencode/.config/opencode:ro \
-  -e OPENCODE_SERVER_PASSWORD=your-secret-password \
-  ghcr.io/etircopyh/containedcode:latest
-```
-
-**Multiple projects:**
-
-```bash
-# Mount multiple projects into the workspace
-docker run -it --rm \
-  -p 8888:8888 \
-  -v /path/to/project-a:/workspace/project-a \
-  -v /path/to/project-b:/workspace/project-b \
-  -v ~/.config/opencode:/home/opencode/.config/opencode:ro \
-  -e OPENCODE_SERVER_PASSWORD=your-secret-password \
-  ghcr.io/etircopyh/containedcode:latest
-```
-
-### Switching Projects in Web UI
-
-**Important:** The OpenCode Web UI is different from the Desktop app:
-
-| Feature | Desktop App | Web UI |
-|---------|-------------|--------|
-| Directory Picker | Native file picker | Entire `/workspace` treated as one project |
-
-**When using the web interface:**
-
-1. All mounted projects are subdirectories of `/workspace`
-2. Tell the AI to navigate: `cd /workspace/my-project`
-3. All your projects are accessible within this single workspace
-
-**Example:**
-```
-You: cd to /workspace/langgraph_telegram_aibot and show me the src folder
-AI: [navigates and shows files]
-```
-
-### Directory Structure
-
-```
-workspace/
-├── my-app/          # Copied or created project
-└── backend-api/     # Another project
-```
-
-**Mount vs Copy:**
-
-| Method | Sync | Requires Restart |
-|--------|------|------------------|
-| **Mount** | Live sync with original | Yes |
-| **Copy** | Isolated, no external changes | No |
+Detach from tmux: `Ctrl+b` then `d`
 
 ---
 
 ## Configuration
 
-### OpenCode Config Directory
-
-Your entire `~/.config/opencode/` directory is mounted read-only into the container:
-
-- `opencode.json` — Main config with API keys and providers
-- `oh-my-opencode.json` — Plugin configuration
-- Any other config files
-
-To use a different config directory:
-
-```bash
-OPENCODE_CONFIG_DIR=/path/to/opencode-config OPENCODE_SERVER_PASSWORD=secret ./start.sh
-```
-
 ### Environment Variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `OPENCODE_SERVER_PASSWORD` | ✅ Yes | — | Password for server authentication |
-| `PORT` | ❌ No | `8888` | Server port |
-| `OPENCODE_CONFIG_DIR` | ❌ No | `~/.config/opencode` | Path to config directory |
-| `OPENCODE_AUTO_UPDATE` | ❌ No | `true` | Auto-update opencode on container start |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AGENT_CMD` | `pi` | Agent command (pi, codex, amp, etc.) |
+| `AGENT_ARGS` | — | Extra arguments for the agent |
+| `WEB_SERVER_PASSWORD` | — | Web IDE password (enables the server) |
+| `WEB_SERVER_ENABLED` | `auto` | Force enable/disable web server |
+| `PORT` | `8888` | Web server port |
+| `SSH_PORT` | `2222` | SSH host port |
+| `AGENT_CONFIG_DIR` | `~/.pi` | Agent config directory |
+| `WEB_CONFIG_DIR` | `~/.config/opencode` | Web IDE config directory |
+| `SSH_AUTHORIZED_KEYS` | `~/.ssh/authorized_keys` | SSH public keys file |
+| `AUTO_UPDATE` | `true` | Auto-update opencode on start |
 
----
+Legacy `OPENCODE_SERVER_*` and `PI_*` variables are also supported.
 
-## Project Structure
+### `.env` File
 
-```
-.
-├── flake.nix           # Nix container definition
-├── docker-compose.yml  # Docker Compose configuration
-├── start.sh            # Launcher script
-├── project.sh          # Project management helper
-├── README.md           # This file
-└── workspace/          # Your project files go here
-```
-
----
-
-## Security
-
-### What's Protected
-
-| Protection | Details |
-|------------|---------|
-| **No Host Access** | Container has no access to your `$HOME` directory |
-| **Read-only Config** | `opencode.json` is mounted read-only |
-| **Non-root User** | All processes run as UID 1000 |
-| **Password Required** | Server rejects connections without valid credentials |
-| **No New Privileges** | Container cannot gain additional capabilities |
-
-### What to Be Aware Of
-
-- **Workspace Access:** The container has full read/write access to `./workspace`
-- **Network:** Server binds to `127.0.0.1` by default (local access only)
-- **Nix Store:** Installed packages persist in a Docker volume
-
----
-
-## Installing Additional Packages
-
-Inside the container, install any package from Nixpkgs:
+Copy `.env.example` to `.env` and configure:
 
 ```bash
-# Enter shell
-./start.sh --shell
-
-# Install packages
-nix profile add nixpkgs#terraform
-nix profile add nixpkgs#awscli2
-nix profile add nixpkgs#docker-compose
-
-# Use them
-terraform --version
+# Minimal setup for remote access
+WEB_SERVER_PASSWORD=your-password
+SSH_AUTHORIZED_KEYS=~/.ssh/authorized_keys
 ```
 
-### Common Packages
+### Web IDE Config
 
-```bash
-# Cloud tools
-nix profile add nixpkgs#terraform
-nix profile add nixpkgs#ansible
+The web IDE (OpenCode) expects a config file at `~/.config/opencode/opencode.json`:
 
-# Languages
-nix profile add nixpkgs#elixir
-nix profile add nixpkgs#zig
-
-# Utilities
-nix profile add nixpkgs#ripgrep
-nix profile add nixpkgs#fd
-nix profile add nixpkgs#bat
-
-# Additional LSP servers (if needed)
-nix profile add nixpkgs#yaml-language-server
-nix profile add nixpkgs#bash-language-server
-nix profile add nixpkgs#dockerfile-language-server-nodejs
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-sonnet-4-5"
+}
 ```
+
+A minimal config is auto-created if missing.
 
 ---
 
-## Language Server Protocol (LSP) Support
+## Project Management
 
-OpenCode uses LSP servers for intelligent code features (diagnostics, go-to-definition, etc.). The following LSP servers are pre-installed:
-
-| Language | Server | Command |
-|----------|--------|---------|
-| TypeScript/JavaScript | typescript-language-server | `typescript-language-server` |
-| TypeScript/JavaScript/JSON | biome | `biome` |
-| HTML/CSS/JSON/ESLint | vscode-langservers-extracted | `vscode-html-language-server`, `vscode-css-language-server`, `vscode-json-language-server`, `vscode-eslint-language-server` |
-| YAML | yaml-language-server | `yaml-language-server` |
-| Bash | bash-language-server | `bash-language-server` |
-| Dockerfile | dockerfile-language-server-nodejs | `dockerfile-language-server-nodejs` |
-| Python | pyright | `pyright` |
-| Go | gopls | `gopls` |
-| Rust | rust-analyzer | `rust-analyzer` |
-| Lua | lua-language-server | `lua-language-server` |
-| Nix | nixd | `nixd` |
-
-### Installing Additional LSP Servers
-
-**Inside the container**, you can install more LSP servers:
+### Adding Projects
 
 ```bash
-# Using Nix (recommended)
-nix profile add nixpkgs#ansible-language-server
-nix profile add nixpkgs#terraform-ls
-nix profile add nixpkgs#clang-tools  # C/C++ language server
-nix profile add nixpkgs#texlab       # LaTeX language server
-nix profile add nixpkgs#marksman     # Markdown language server
+# Copy a project into workspace (isolated copy)
+./project.sh copy ~/projects/my-app
 
-# Using npm (for Node.js-based servers)
-npm install -g @ansible/ansible-language-server
-npm install -g @prisma/language-server
+# Mount a project (live sync)
+./project.sh mount ~/projects/my-app
+./project.sh apply   # Generate docker-compose.override.yml
 ```
 
-### Can OpenCode Install Packages Automatically?
+### Managing Projects
 
-**Not automatically**, but you can ask it to. OpenCode can run installation commands for you:
-
+```bash
+./project.sh list                # List all projects
+./project.sh create new-project  # Create new project
+./project.sh shell my-app        # Open shell in project
+./project.sh remove my-app       # Remove project
 ```
-You: Install the YAML language server
-AI: I'll install it for you using Nix...
-     [runs nix profile add nixpkgs#yaml-language-server]
-```
-
-The container comes with **Nix** and **npm** available, so OpenCode can install packages when you ask it to. This is the "autonomy" feature — the AI has package managers available and can use them.
 
 ---
 
@@ -439,98 +216,94 @@ The container comes with **Nix** and **npm** available, so OpenCode can install 
 
 | Category | Tools |
 |----------|-------|
-| **Languages** | Node.js 22, Python 3.12, Go 1.26, Rust, Bun |
+| **Languages** | Node.js 22, Python 3.12, Go 1.24, Rust, Bun |
 | **Databases** | PostgreSQL client, Redis CLI, MongoDB tools, SQLite |
 | **Build** | Make, CMake, GCC, pkg-config |
 | **Version Control** | Git, GitHub CLI |
 | **Network** | curl, wget, jq, yq |
 | **Editors** | nano, vim |
-| **System** | htop, procps, coreutils |
-| **LSP Servers** | typescript-language-server, vscode-langservers-extracted (HTML/CSS/JSON/ESLint), pyright, gopls, rust-analyzer, lua-language-server, nixd, yaml-language-server, bash-language-server, dockerfile-language-server-nodejs, biome |
+| **System** | htop, tmux, procps, coreutils |
+| **Package Manager** | Nix (80,000+ packages), bun (Node.js), uv (Python) |
+| **LSP Servers** | TypeScript, Pyright, gopls, rust-analyzer, lua-language-server, nixd, yaml-language-server, bash-language-server, dockerfile-language-server-nodejs, biome, vscode-langservers-extracted |
 
 ---
 
-## Connecting Remotely
+## SSH Remote Access
 
-### From Another Machine
+1. Add your public key to `~/.ssh/authorized_keys` on the **host**:
 
-#### Option 1: SSH Tunnel (Recommended)
+   ```bash
+   echo 'ssh-ed25519 AAAA...' >> ~/.ssh/authorized_keys
+   ```
 
-```bash
-ssh -L 8888:localhost:8888 user@server
-opencode attach http://localhost:8888
-```
+2. Connect from another machine:
 
-#### Option 2: Direct Access
+   ```bash
+   ssh -p 2222 opencode@your-server-ip
+   ```
 
-Edit `docker-compose.yml` and change `HOSTNAME` to `0.0.0.0`, then ensure firewall allows access.
+3. Attach to the agent:
 
-### FAQ: Can Remote OpenCode Edit Local Files?
-
-**No.** When you connect to a remote OpenCode server:
-
-- You can ONLY edit files on that server
-- The server CANNOT access your local files
-- To work on local files, mount them into the container
-
-This is a security feature — your local machine stays isolated.
+   ```bash
+   tmux attach -t agent
+   ```
 
 ---
 
-## Troubleshooting
+## Installing Additional Packages
 
-### Port Already in Use
-
-```bash
-# Check what's using the port
-lsof -i :8888
-
-# Use a different port
-PORT=9999 OPENCODE_SERVER_PASSWORD=secret ./start.sh
-```
-
-### Config File Not Found
-
-The script creates a minimal config if none exists. Add your API keys:
+Inside the container (or via the agent), install any of 80,000+ Nix packages:
 
 ```bash
-nano ~/.config/opencode/opencode.json
+nix profile install nixpkgs#ripgrep
+nix profile install nixpkgs#terraform
+nix profile install nixpkgs#awscli2
 ```
 
-### Nix Build Fails
-
-If you don't have Nix installed, use the Dockerfile build:
+Or use bun for Node.js tools:
 
 ```bash
-# The script falls back automatically
-./start.sh --build
+bun install -g <package>
 ```
 
-### Permission Denied
+---
 
-Ensure the workspace directory has correct permissions:
+## Architecture
 
-```bash
-chmod 755 ./workspace
 ```
+Container (containedcode)
+├── tmux session "agent"
+│   └── Agent process (pi, codex, amp, ...)
+├── SSH daemon (port 2222)
+├── Web IDE server (port 8888, optional)
+├── Nix package manager
+└── Pre-installed dev tools
+```
+
+All processes run as non-root user `opencode` (UID 1000). The container persists Nix packages, tool caches, and agent data across restarts via named Docker volumes.
+
+---
+
+## Security
+
+- **No host access** — only the workspace directory is mounted.
+- **Read-only config** — `opencode.json` is mounted read-only.
+- **Non-root user** — all processes run as UID 1000.
+- **Password required** — web IDE requires authentication.
+- **Key-based SSH only** — no password authentication.
+- **No new privileges** — container cannot gain additional capabilities.
 
 ---
 
 ## Building from Source
 
-### With Nix (Recommended)
-
 ```bash
-nix --extra-experimental-features 'nix-command flakes' build .#default
-docker load < result
-```
-
-### Without Nix
-
-A `Dockerfile.alpine` is included for systems without Nix:
-
-```bash
+# Using Docker compose (Alpine-based)
 docker compose build
+
+# Using Nix
+nix build .#default
+docker load < result
 ```
 
 ---
@@ -538,10 +311,3 @@ docker compose build
 ## License
 
 MIT License — See [LICENSE](LICENSE) for details.
-
----
-
-## Acknowledgments
-
-- [grigio/docker-nixuser](https://github.com/grigio/docker-nixuser) — Original Nix-in-Docker approach
-- [anomalyco/opencode](https://github.com/anomalyco/opencode) — OpenCode itself

@@ -1,73 +1,53 @@
-# OpenCode Server - Secure Container Configuration
+# ContainedCode - Universal Coding Agent Container
 # 
 # Usage:
-#   ./start.sh                   (Pi in tmux + SSH access)
-#   ./start.sh --opencode        (Pi + OpenCode web server)
+#   ./start.sh                   (agent in tmux + SSH access)
+#   ./start.sh --web             (agent + web IDE server)
 #   ./start.sh --shell           (Interactive shell)
 #
 # Connect via SSH:
 #   ssh -p 2222 opencode@localhost         (then: tmux attach)
 #   ssh -p 2222 opencode@your-server-ip    (from another machine)
 #
-# Connect via docker exec (no SSH needed on localhost):
-#   docker exec -it opencode-server tmux attach
+# Connect via docker exec:
+#   docker exec -it containedcode tmux attach
 
 services:
-  opencode-server:
+  containedcode:
     build:
       context: .
       dockerfile: Dockerfile.alpine
-    image: opencode-server:latest
-    container_name: opencode-server
+    image: containedcode:latest
+    container_name: containedcode
     
-    # Port configuration
     ports:
-      # OpenCode web server (optional, enabled with OPENCODE_SERVER_ENABLED=true)
       - "${PORT:-8888}:${PORT:-8888}"
-      # SSH for remote Pi/tmux access
       - "${SSH_PORT:-2222}:2222"
     
-    # Environment configuration
     environment:
-      - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-}
-      - OPENCODE_SERVER_ENABLED=${OPENCODE_SERVER_ENABLED:-false}
+      - WEB_SERVER_PASSWORD=${WEB_SERVER_PASSWORD:-}
+      - WEB_SERVER_ENABLED=${WEB_SERVER_ENABLED:-false}
       - PORT=${PORT:-8888}
       - HOSTNAME=0.0.0.0
-      - PI_COMMAND=${PI_COMMAND:-pi}
+      - AGENT_CMD=${AGENT_CMD:-}
+      - AGENT_ARGS=${AGENT_ARGS:-}
+      - PI_COMMAND=${PI_COMMAND:-}
       - PI_ARGS=${PI_ARGS:-}
-      - OPENCODE_AUTO_UPDATE=${OPENCODE_AUTO_UPDATE:-true}
+      - AUTO_UPDATE=${AUTO_UPDATE:-true}
     
-    # Volume mounts
     volumes:
-      # Project workspace - your code goes here
       - ./workspace:/workspace:rw
-      
-      # OpenCode config directory (contains opencode.json with API keys)
-      # Read-only for security - API keys and settings protected
-      - ${OPENCODE_CONFIG_DIR:-~/.config/opencode}:/home/opencode/.config/opencode:ro
-      
-      # Pi agent config (extensions, skills, prompts, settings, sessions)
-      - ${PI_CONFIG_DIR:-~/.pi}:/home/opencode/.pi:rw
-      
-      # SSH authorized keys for remote access
-      # Mount your public key so you can SSH in from other machines
+      - ${WEB_CONFIG_DIR:-${OPENCODE_CONFIG_DIR:-~/.config/opencode}}:/home/opencode/.config/opencode:ro
+      - ${AGENT_CONFIG_DIR:-${PI_CONFIG_DIR:-~/.pi}}:/home/opencode/.pi:rw
       - ${SSH_AUTHORIZED_KEYS:-~/.ssh/authorized_keys}:/home/opencode/.ssh/authorized_keys:ro
-      
-      # Persist Nix packages between runs
       - nix-store:/nix:rw
-      
-      # Persist opencode data (sessions, bun global packages, uv tools, etc.)
       - opencode-data:/home/opencode/.local:rw
-      
-      # Persist package caches between runs
       - opencode-cache:/home/opencode/.cache:rw
     
-    # Security settings
     security_opt:
       - no-new-privileges:true
-    read_only: false  # Required for Nix + SSH to work
+    read_only: false
     
-    # Resource limits (adjust as needed)
     deploy:
       resources:
         limits:
@@ -75,29 +55,25 @@ services:
         reservations:
           memory: 512M
     
-    # Health check - check SSH is responding
     healthcheck:
-      test: ["CMD-SHELL", "pgrep sshd && (tmux has-session -t pi 2>/dev/null || true) || exit 1"]
+      test: ["CMD-SHELL", "pgrep sshd && (tmux has-session -t agent 2>/dev/null || true) || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
     
-    # Restart policy - always restart so Pi comes back after host reboot
     restart: unless-stopped
     
-    # Logging
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
 
-# Named volumes for persistence
 volumes:
   nix-store:
-    name: opencode-nix-store
+    name: containedcode-nix-store
   opencode-data:
-    name: opencode-data
+    name: containedcode-data
   opencode-cache:
-    name: opencode-cache
+    name: containedcode-cache

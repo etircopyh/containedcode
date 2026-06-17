@@ -18,7 +18,8 @@ if [ -d /opt/init-cache ] && [ -z "$(ls -A /home/opencode/.cache 2>/dev/null)" ]
 fi
 
 # --- Auto-update ---
-if [ "${OPENCODE_AUTO_UPDATE:-true}" = "true" ]; then
+AUTO_UPDATE="${AUTO_UPDATE:-${OPENCODE_AUTO_UPDATE:-true}}"
+if [ "$AUTO_UPDATE" = "true" ]; then
     echo "Checking for opencode updates..."
     ARCH=$(uname -m)
     case "$ARCH" in
@@ -26,7 +27,7 @@ if [ "${OPENCODE_AUTO_UPDATE:-true}" = "true" ]; then
         aarch64) MUSL_PKG="opencode-linux-arm64-musl" ;;
         *) MUSL_PKG="" ;;
     esac
-    su - opencode -c 'bun install -g opencode-ai@latest' 2>/dev/null || echo "Update failed, continuing..."
+    su - opencode -c 'source ~/.bashrc 2>/dev/null; bun install -g opencode-ai@latest' 2>/dev/null || echo "Update failed, continuing..."
     if [ -n "$MUSL_PKG" ]; then
         ln -sf "/home/opencode/.bun/install/global/node_modules/$MUSL_PKG/bin/opencode" \
                "/home/opencode/.bun/install/global/node_modules/opencode-ai/bin/.opencode"
@@ -42,36 +43,45 @@ if [ ! -f /etc/ssh/ssh_host_ed25519_key ]; then
 fi
 /usr/sbin/sshd -e || echo "WARNING: sshd failed to start, SSH access unavailable"
 
-# --- Start Pi in tmux ---
-echo "Starting Pi in tmux session..."
-PI_CMD="${PI_COMMAND:-pi}"
-PI_ARGS="${PI_ARGS:-}"
+# --- Start agent in tmux ---
+# AGENT_CMD overrides PI_COMMAND; if neither is set, defaults to "pi"
+AGENT_CMD="${AGENT_CMD:-${PI_COMMAND:-pi}}"
+AGENT_ARGS="${AGENT_ARGS:-${PI_ARGS:-}}"
+TMUX_SESSION="agent"
+
+echo "Starting agent ($AGENT_CMD $AGENT_ARGS) in tmux session '$TMUX_SESSION'..."
 
 # Create tmux session as opencode user
-su - opencode -c 'tmux new-session -d -s pi -x 200 -y 50'
+su - opencode -c "tmux new-session -d -s $TMUX_SESSION -x 200 -y 50"
 
-# Send the Pi start command — source bashrc first to get PATH, then run Pi
-su - opencode -c "tmux send-keys -t pi 'source ~/.bashrc 2>/dev/null; cd /workspace && $PI_CMD $PI_ARGS' Enter"
+# Send the agent start command — source bashrc first to get PATH
+su - opencode -c "tmux send-keys -t $TMUX_SESSION 'source ~/.bashrc 2>/dev/null; cd /workspace && $AGENT_CMD $AGENT_ARGS' Enter"
 
-echo "Pi running in tmux session 'pi'"
-echo "Connect: docker exec -it --user opencode opencode-server tmux attach"
+echo "Agent running in tmux session '$TMUX_SESSION'"
+echo "Connect: docker exec -it --user opencode containedcode tmux attach"
 echo "Or SSH:  ssh -p 2222 opencode@localhost"
 
-# --- Optionally start OpenCode server ---
-if [ "${OPENCODE_SERVER_ENABLED:-false}" = "true" ]; then
+# --- Optionally start web IDE server (OpenCode) ---
+# Auto-enable when password is set, unless explicitly disabled
+# Supports WEB_SERVER_PASSWORD/WEB_SERVER_ENABLED (new) and OPENCODE_SERVER_PASSWORD/OPENCODE_SERVER_ENABLED (legacy)
+WEB_PASSWORD="${WEB_SERVER_PASSWORD:-${OPENCODE_SERVER_PASSWORD:-}}"
+WEB_ENABLED="${WEB_SERVER_ENABLED:-${OPENCODE_SERVER_ENABLED:-auto}}"
+if [ "$WEB_ENABLED" != "false" ] && { [ "$WEB_ENABLED" = "true" ] || [ -n "$WEB_PASSWORD" ]; }; then
     PORT="${PORT:-8888}"
-    HOSTNAME="${HOSTNAME:-0.0.0.0}"
-    echo "Starting OpenCode server on port $PORT..."
-    su - opencode -c "cd /workspace && opencode serve --hostname $HOSTNAME --port $PORT" &
+    # HOSTNAME collides with Docker's system hostname. If HOSTNAME matches
+    # the container hostname, Docker auto-set it — default to 0.0.0.0.
+    if [ "$HOSTNAME" = "$(hostname 2>/dev/null)" ] || [ -z "${HOSTNAME}" ]; then
+        BIND_ADDR="0.0.0.0"
+    else
+        BIND_ADDR="$HOSTNAME"
+    fi
+    echo "Starting OpenCode server on port $PORT (bind: $BIND_ADDR)..."
+    su - opencode -c "source ~/.bashrc 2>/dev/null; cd /workspace && env \"OPENCODE_SERVER_PASSWORD=$WEB_PASSWORD\" opencode serve --hostname $BIND_ADDR --port $PORT" &
     OPENCODE_PID=$!
 fi
 
-# --- Keep container alive ---
-if [ -n "$OPENCODE_PID" ]; then
-    wait $OPENCODE_PID
-else
-    while su - opencode -c 'tmux has-session -t pi' 2>/dev/null; do
-        sleep 5
-    done
-    echo "Pi tmux session ended. Exiting."
-fi
+# --- Keep container alive (wait for tmux session) ---
+while su - opencode -c "tmux has-session -t $TMUX_SESSION" 2>/dev/null; do
+    sleep 5
+done
+echo "Tmux session '$TMUX_SESSION' ended. Exiting."

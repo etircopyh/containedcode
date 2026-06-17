@@ -1,5 +1,5 @@
 {
-  description = "Secure OpenCode Server Container with Pi coding agent and Nix package manager";
+  description = "ContainedCode - Universal Coding Agent Container";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -82,22 +82,24 @@
         echo "Starting SSH daemon..."
         /usr/sbin/sshd
 
-        # Start Pi in tmux session
-        echo "Starting Pi in tmux session..."
-        PI_CMD="${"\${PI_COMMAND:-pi}"}"
-        PI_ARGS="${"\${PI_ARGS:-}"}"
+        # Start agent in tmux session
+        echo "Starting agent in tmux session..."
+        AGENT_CMD="${AGENT_CMD:-${PI_COMMAND:-pi}}"
+        AGENT_ARGS="${AGENT_ARGS:-${PI_ARGS:-}}"
+        TMUX_SESSION="agent"
 
         ${pkgs.util-linux}/bin/setpriv --reuid=1000 --regid=1000 --init-groups \
           env HOME=/home/opencode USER=opencode \
-          tmux new-session -d -s pi -x 200 -y 50
+          tmux new-session -d -s $TMUX_SESSION -x 200 -y 50
 
         ${pkgs.util-linux}/bin/setpriv --reuid=1000 --regid=1000 --init-groups \
           env HOME=/home/opencode USER=opencode \
-          tmux send-keys -t pi "cd /workspace && $PI_CMD $PI_ARGS" Enter
+          tmux send-keys -t $TMUX_SESSION "source ~/.bashrc 2>/dev/null; cd /workspace && $AGENT_CMD $AGENT_ARGS" Enter
 
-        echo "Pi running in tmux session 'pi'"
+        echo "Agent running in tmux session '$TMUX_SESSION'"
 
-        # Optionally start OpenCode server
+        # Optionally start web IDE server (OpenCode)
+        # Uses OPENCODE_SERVER_ENABLED / OPENCODE_SERVER_PASSWORD env vars
         if [ "${"\${OPENCODE_SERVER_ENABLED:-false}"}" = "true" ]; then
             PORT="${"\${PORT:-8888}"}"
             HOSTNAME="${"\${HOSTNAME:-0.0.0.0}"}"
@@ -112,10 +114,10 @@
         # Keep container alive - wait for tmux session
         while ${pkgs.util-linux}/bin/setpriv --reuid=1000 --regid=1000 --init-groups \
           env HOME=/home/opencode USER=opencode \
-          tmux has-session -t pi 2>/dev/null; do
+          tmux has-session -t "$TMUX_SESSION" 2>/dev/null; do
             sleep 5
         done
-        echo "Pi tmux session ended. Exiting."
+        echo "Tmux session ended. Exiting."
         EOF
         chmod +x $out/bin/entrypoint
 
@@ -139,7 +141,7 @@
 
     in {
       default = pkgs.dockerTools.buildLayeredImage {
-        name = "opencode-server";
+        name = "containedcode";
         tag = "latest";
 
         # Comprehensive development environment

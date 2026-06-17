@@ -104,4 +104,17 @@ jobs:
       - name: Test image
         run: |
           docker pull ${{ steps.image-tag.outputs.tag }}
-          docker run --rm --entrypoint "/bin/bash" ${{ steps.image-tag.outputs.tag }} -c "opencode --version"
+          echo "=== OpenCode server ==="
+          docker run --rm --entrypoint /bin/bash ${{ steps.image-tag.outputs.tag }} -c "opencode --version"
+          echo "=== Pi agent ==="
+          docker run --rm --entrypoint /bin/bash ${{ steps.image-tag.outputs.tag }} -c "su - opencode -c 'which pi && pi --version'"
+          echo "=== Codex CLI ==="
+          docker run --rm --entrypoint /bin/bash ${{ steps.image-tag.outputs.tag }} -c "su - opencode -c 'which codex && codex --version'"
+          echo "=== All agents findable without bashrc ==="
+          docker run --rm --entrypoint /bin/bash ${{ steps.image-tag.outputs.tag }} -c "su - opencode -c 'which pi codex amp' 2>&1 && echo 'all agents in path'"
+          echo "=== Web server starts and responds ==="
+          docker run -d --name containedcode-test -e WEB_SERVER_PASSWORD=citest ${{ steps.image-tag.outputs.tag }}
+          sleep 10
+          docker logs containedcode-test 2>&1 | grep -q "listening on" && echo "server started" || (docker logs containedcode-test; exit 1)
+          curl -sf -u opencode:citest -o /dev/null http://$(docker inspect containedcode-test --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'):8888/ && echo "server responds" || exit 1
+          docker kill containedcode-test; docker rm containedcode-test

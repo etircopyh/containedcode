@@ -83,7 +83,21 @@ RUN ARCH=$(uname -m) && \
            "/home/opencode/.bun/install/global/node_modules/opencode-ai/bin/.opencode"
 
 # Install Pi coding agent
-RUN bun install -g @mariozechner/pi-coding-agent
+RUN bun install -g @earendil-works/pi-coding-agent
+
+# Install Codex CLI
+RUN CODEX_NON_INTERACTIVE=true curl -fsSL https://chatgpt.com/codex/install.sh | sh
+
+# Install Amp (binary is on disk, but requires glibc — does not work on Alpine's musl without full glibc compat)
+RUN curl -fsSL https://ampcode.com/install.sh | bash
+
+# Symlink agent binaries into system PATH so they're found even in su - login shells
+USER root
+RUN ln -sf /home/opencode/.local/bin/codex /usr/bin/codex && \
+    ln -sf /home/opencode/.local/bin/amp /usr/bin/amp 2>/dev/null || true && \
+    ln -sf /home/opencode/.bun/bin/pi /usr/bin/pi && \
+    ln -sf /home/opencode/.bun/bin/bun /usr/bin/bun
+USER opencode
 
 # Install language servers globally for LSP support
 RUN bun install -g typescript-language-server typescript vscode-langservers-extracted pyright yaml-language-server bash-language-server dockerfile-language-server-nodejs @biomejs/biome @vtsls/language-server

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Project helper for OpenCode server
+# Project helper for ContainedCode
 #
 # Usage:
 #   ./project.sh list              - List all projects
@@ -147,7 +147,7 @@ case "$cmd" in
         
         cat > docker-compose.override.yml << 'HEADER'
 services:
-  opencode-server:
+  containedcode:
     volumes:
 HEADER
         
@@ -163,7 +163,7 @@ HEADER
         echo ""
         echo "Restart server to apply:"
         echo "  ./start.sh --stop"
-        echo "  OPENCODE_SERVER_PASSWORD=... ./start.sh"
+        echo "  WEB_SERVER_PASSWORD=... ./start.sh"
         ;;
     
     create|new)
@@ -198,7 +198,7 @@ HEADER
             ./project.sh list
             exit 1
         fi
-        docker compose run --rm -w "/workspace/$arg" opencode-server /bin/shell-entrypoint
+        docker compose run --rm -w "/workspace/$arg" containedcode /bin/shell-entrypoint
         ;;
     
     *)
