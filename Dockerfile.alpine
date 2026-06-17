@@ -46,17 +46,20 @@ RUN apk add --no-cache \
     openssh-server \
     && rm -rf /var/cache/apk/*
 
-# Install Nix package manager using the official install script
-RUN addgroup -g 30000 -S nixbld && \
-    for i in $(seq 1 30); do adduser -S -D -h /var/empty -g "Nix build user $i" -u $((30000 + i)) -G nixbld nixbld$i ; done && \
-    chown root:root /var/empty && chmod 755 /var/empty && \
-    mkdir -m 0755 /etc/nix /nix && \
-    echo 'sandbox = false' >> /etc/nix/nix.conf && \
+# Install Nix package manager (optional — may fail on QEMU-emulated builds
+# where seccomp BPF isn't supported. Users can install Nix at runtime.)
+RUN addgroup -g 30000 -S nixbld 2>/dev/null; \
+    for i in $(seq 1 30); do adduser -S -D -h /var/empty -g "Nix build user $i" -u $((30000 + i)) -G nixbld nixbld$i 2>/dev/null; done; \
+    mkdir -p /etc/nix /nix && \
+    echo 'sandbox = false' > /etc/nix/nix.conf && \
     echo 'experimental-features = nix-command flakes' >> /etc/nix/nix.conf && \
     echo 'trusted-users = root opencode' >> /etc/nix/nix.conf && \
     echo 'build-users-group = nixbld' >> /etc/nix/nix.conf && \
-    sh <(curl -L https://nixos.org/nix/install) --no-daemon && \
-    ln -s /nix/var/nix/profiles/default/etc/profile.d/nix.sh /etc/profile.d/nix.sh
+    (NIX_CONF_DIR=/etc/nix sh <(curl -L https://nixos.org/nix/install) --no-daemon --no-build-users 2>/dev/null || echo "Nix install skipped") && \
+    if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix.sh ]; then \
+        mkdir -p /etc/profile.d && \
+        ln -sf /nix/var/nix/profiles/default/etc/profile.d/nix.sh /etc/profile.d/nix.sh; \
+    fi
 
 # Create non-root user
 RUN adduser -D -u 1000 -h /home/opencode -s /bin/bash opencode
@@ -96,7 +99,8 @@ USER root
 RUN ln -sf /home/opencode/.local/bin/codex /usr/bin/codex && \
     ln -sf /home/opencode/.local/bin/amp /usr/bin/amp 2>/dev/null || true && \
     ln -sf /home/opencode/.bun/bin/pi /usr/bin/pi && \
-    ln -sf /home/opencode/.bun/bin/bun /usr/bin/bun
+    ln -sf /home/opencode/.bun/bin/bun /usr/bin/bun && \
+    ln -sf /home/opencode/.bun/bin/opencode /usr/bin/opencode
 USER opencode
 
 # Install language servers globally for LSP support
@@ -116,10 +120,10 @@ RUN install -d -o opencode -g opencode /workspace \
     /nix/var/nix/profiles/per-user/opencode && \
     chown opencode:nixbld /nix/var/nix/profiles/per-user/opencode
 
-# Install ast-grep via Nix
-ENV PATH="/nix/var/nix/profiles/default/bin:$PATH"
-RUN /nix/var/nix/profiles/default/bin/nix profile install nixpkgs#ast-grep && \
-    ln -s /nix/var/nix/profiles/default/bin/ast-grep /nix/var/nix/profiles/default/bin/sg
+# ast-grep not included — the pre-built binary requires glibc symbols
+# (gnu_get_libc_version) not available on Alpine even with gcompat.
+# Install at runtime if needed: nix profile install nixpkgs#ast-grep
+RUN echo "ast-grep omitted (glibc dep, install via nix at runtime)"
 
 # Stage build-time content for volume initialization
 RUN mkdir -p /opt/init-nix /opt/init-local /opt/init-cache && \
